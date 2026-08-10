@@ -1,0 +1,6 @@
+{
+  "name": "Ahmet Egemen'in Köşesi",
+  "description": "Çocuklara özel güvenli aile medya platformu ve ebeveyn yönetim paneli.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
