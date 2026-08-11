@@ -74,7 +74,7 @@ export const Header: React.FC = () => {
               </>
             )}
 
-            {role !== 'child' && (
+            {(role === 'parent' || role === 'admin') && (
               <Link
                 to={ROUTES.PARENT_PANEL}
                 className={`px-4 py-2.5 rounded-2xl font-bold text-sm transition-all flex items-center gap-2 border ${

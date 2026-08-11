@@ -19,7 +19,7 @@ export class AuthService {
         first_name: data.first_name,
         last_name: data.last_name,
         avatar_path: data.avatar_path,
-        role: (data.role as UserRole) || 'child',
+        role: (data.role as UserRole) || 'guest',
         created_at: data.created_at,
         updated_at: data.updated_at,
       };
@@ -38,7 +38,7 @@ export class AuthService {
       }
 
       const profile = await this.getProfile(session.user.id);
-      const role: UserRole = profile?.role || 'child';
+      const role: UserRole = profile?.role || 'guest';
 
       return {
         user: { id: session.user.id, email: session.user.email },

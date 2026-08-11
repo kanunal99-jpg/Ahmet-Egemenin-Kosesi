@@ -30,8 +30,8 @@ export const ParentRoute: React.FC<ParentRouteProps> = ({ children }) => {
     return <Navigate to={ROUTES.LOGIN} state={{ from: location }} replace />;
   }
 
-  // Child accounts CANNOT access Parent Panel under any circumstances
-  if (role === 'child') {
+  // Only 'parent' or 'admin' roles can access Parent Panel (blocks 'child', 'publisher', 'guest')
+  if (role !== 'parent' && role !== 'admin') {
     return (
       <MainLayout>
         <div className="max-w-md mx-auto my-12 bg-white p-8 rounded-3xl border border-rose-100 text-center shadow-xl">
@@ -40,7 +40,7 @@ export const ParentRoute: React.FC<ParentRouteProps> = ({ children }) => {
           </div>
           <h2 className="text-xl font-bold text-slate-800 mb-2">Erişim Engellendi</h2>
           <p className="text-sm text-slate-600 mb-6">
-            Çocuk hesaplarının ebeveyn paneline erişim yetkisi yoktur.
+            Ebeveyn paneline erişim yetkiniz bulunmamaktadır. Sadece ebeveyn ve yönetici hesapları erişebilir.
           </p>
           <Link
             to={ROUTES.HOME}

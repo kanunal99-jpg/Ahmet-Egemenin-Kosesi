@@ -54,14 +54,21 @@ export const RegisterPage: React.FC = () => {
       } else {
         if (data.user) {
           // Insert initial profile record with sanitized role
-          await supabase.from('profiles').insert({
+          const { error: profileError } = await supabase.from('profiles').insert({
             id: data.user.id,
             first_name: firstName,
             last_name: lastName,
             role: safeRole,
           });
+
+          if (profileError) {
+            setError(`Profil kaydı oluşturulamadı: ${profileError.message}`);
+            setIsLoading(false);
+            return;
+          }
         }
         await refreshSession();
+        setIsLoading(false);
         navigate(ROUTES.HOME, { replace: true });
       }
     } catch (err: unknown) {
