@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from './supabase.client';
 import { ParentSettings, ReportTimePeriod, UsageReportData, ServiceOperationResult } from '../types';
+import { DEFAULT_CATEGORIES } from '../constants/categories.constants';
 
 export class ParentService {
   /**
@@ -118,8 +119,7 @@ export class ParentService {
    * Generates usage report strictly from watch_history (READ-ONLY calculation)
    */
   async getUsageReport(userId: string, period: ReportTimePeriod): Promise<UsageReportData> {
-    // Read-only calculation stub for Stage 2 architecture
-    return {
+    const emptyReport: UsageReportData = {
       period,
       totalWatchTimeSeconds: 0,
       watchedVideosCount: 0,
@@ -127,6 +127,147 @@ export class ParentService {
       categoryStats: [],
       topWatchedVideos: [],
     };
+
+    if (!isSupabaseConfigured || !userId) return emptyReport;
+
+    try {
+      let query = supabase
+        .from('watch_history')
+        .select(`
+          id,
+          user_id,
+          video_id,
+          progress_seconds,
+          completed,
+          updated_at,
+          video:videos!inner (
+            id,
+            title,
+            category_id,
+            is_deleted,
+            category:categories (
+              id,
+              title
+            )
+          )
+        `)
+        .eq('user_id', userId)
+        .eq('video.is_deleted', false);
+
+      const now = new Date();
+      let startDate: Date | null = null;
+
+      switch (period) {
+        case 'daily':
+          startDate = new Date(now);
+          startDate.setHours(0, 0, 0, 0);
+          break;
+        case 'weekly':
+          startDate = new Date(now);
+          startDate.setDate(now.getDate() - 7);
+          break;
+        case 'monthly':
+          startDate = new Date(now);
+          startDate.setMonth(now.getMonth() - 1);
+          break;
+        case '3months':
+          startDate = new Date(now);
+          startDate.setMonth(now.getMonth() - 3);
+          break;
+        case '6months':
+          startDate = new Date(now);
+          startDate.setMonth(now.getMonth() - 6);
+          break;
+        case '9months':
+          startDate = new Date(now);
+          startDate.setMonth(now.getMonth() - 9);
+          break;
+        case '12months':
+          startDate = new Date(now);
+          startDate.setFullYear(now.getFullYear() - 1);
+          break;
+      }
+
+      if (startDate) {
+        query = query.gte('updated_at', startDate.toISOString());
+      }
+
+      const { data, error } = await query;
+
+      if (error || !data) {
+        return emptyReport;
+      }
+
+      type JoinedRow = {
+        id: string;
+        user_id: string;
+        video_id: string;
+        progress_seconds: number;
+        completed: boolean;
+        updated_at: string;
+        video?: {
+          id: string;
+          title: string;
+          category_id: string | null;
+          is_deleted: boolean;
+          category?: {
+            id: string;
+            title: string;
+          } | null;
+        } | null;
+      };
+
+      const rows = (data as unknown as JoinedRow[]).filter((r) => r.video && !r.video.is_deleted);
+
+      const totalWatchTimeSeconds = rows.reduce((sum, r) => sum + (r.progress_seconds || 0), 0);
+      const watchedVideosCount = rows.length;
+      const completedVideosCount = rows.filter((r) => r.completed).length;
+
+      const categoryMap = new Map<string, { categoryTitle: string; watchTimeSeconds: number; videoCount: number }>();
+
+      rows.forEach((r) => {
+        const catId = r.video?.category_id || 'uncategorized';
+        const catTitle =
+          r.video?.category?.title ||
+          DEFAULT_CATEGORIES.find((c) => c.id === catId)?.title ||
+          'Kategorisiz';
+
+        const existing = categoryMap.get(catId) || { categoryTitle: catTitle, watchTimeSeconds: 0, videoCount: 0 };
+        existing.watchTimeSeconds += r.progress_seconds || 0;
+        existing.videoCount += 1;
+        categoryMap.set(catId, existing);
+      });
+
+      const categoryStats = Array.from(categoryMap.entries())
+        .map(([categoryId, stats]) => ({
+          categoryId,
+          categoryTitle: stats.categoryTitle,
+          watchTimeSeconds: stats.watchTimeSeconds,
+          videoCount: stats.videoCount,
+        }))
+        .sort((a, b) => b.watchTimeSeconds - a.watchTimeSeconds);
+
+      const topWatchedVideos = rows
+        .map((r) => ({
+          videoId: r.video_id,
+          title: r.video?.title || 'Bilinmeyen Video',
+          watchCount: 1,
+          totalSeconds: r.progress_seconds || 0,
+        }))
+        .sort((a, b) => b.totalSeconds - a.totalSeconds)
+        .slice(0, 5);
+
+      return {
+        period,
+        totalWatchTimeSeconds,
+        watchedVideosCount,
+        completedVideosCount,
+        categoryStats,
+        topWatchedVideos,
+      };
+    } catch {
+      return emptyReport;
+    }
   }
 }
 

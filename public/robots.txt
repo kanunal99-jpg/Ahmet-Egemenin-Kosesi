@@ -1,0 +1,8 @@
+# robots.txt for Ahmet Egemen'in Köşesi
+User-agent: *
+Allow: /
+Disallow: /ebeveyn-paneli
+Disallow: /login
+Disallow: /register
+
+Sitemap: https://ahmetegemeninkosesi.com/sitemap.xml

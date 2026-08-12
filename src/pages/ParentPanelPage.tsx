@@ -1,15 +1,46 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MainLayout } from '../components/layout/MainLayout';
-import { ReportTimePeriod } from '../types';
-import { Shield, Clock, Key, BarChart3, CheckCircle2 } from 'lucide-react';
+import { ReportTimePeriod, UsageReportData } from '../types';
+import { Shield, Key, BarChart3, CheckCircle2, Film } from 'lucide-react';
 import { parentService } from '../services/parent.service';
 import { useAuth } from '../hooks/useAuth';
+import { formatDurationHuman } from '../utils/formatters.utils';
 
 export const ParentPanelPage: React.FC = () => {
   const { user } = useAuth();
   const [selectedPeriod, setSelectedPeriod] = useState<ReportTimePeriod>('weekly');
+  const [reportData, setReportData] = useState<UsageReportData | null>(null);
+  const [isLoadingReport, setIsLoadingReport] = useState<boolean>(false);
   const [newPin, setNewPin] = useState<string>('');
   const [pinMessage, setPinMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let isMounted = true;
+    setIsLoadingReport(true);
+
+    parentService
+      .getUsageReport(user.id, selectedPeriod)
+      .then((data) => {
+        if (isMounted) {
+          setReportData(data);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setReportData(null);
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoadingReport(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id, selectedPeriod]);
 
   const periods: { id: ReportTimePeriod; label: string }[] = [
     { id: 'daily', label: 'Günlük' },
@@ -89,17 +120,60 @@ export const ParentPanelPage: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4">
             <div className="p-4 rounded-2xl bg-amber-50/50 border border-amber-100">
               <span className="text-xs font-semibold text-amber-800 block">Toplam İzleme Süresi</span>
-              <span className="text-2xl font-black text-slate-800 mt-1 block">0 dk</span>
+              <span className="text-2xl font-black text-slate-800 mt-1 block">
+                {isLoadingReport ? '...' : formatDurationHuman(reportData?.totalWatchTimeSeconds || 0)}
+              </span>
             </div>
             <div className="p-4 rounded-2xl bg-blue-50/50 border border-blue-100">
               <span className="text-xs font-semibold text-blue-800 block">İzlenen Video Sayısı</span>
-              <span className="text-2xl font-black text-slate-800 mt-1 block">0 adet</span>
+              <span className="text-2xl font-black text-slate-800 mt-1 block">
+                {isLoadingReport ? '...' : `${reportData?.watchedVideosCount || 0} adet`}
+              </span>
             </div>
             <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100">
               <span className="text-xs font-semibold text-emerald-800 block">Tamamlanan İçerikler</span>
-              <span className="text-2xl font-black text-slate-800 mt-1 block">0 adet</span>
+              <span className="text-2xl font-black text-slate-800 mt-1 block">
+                {isLoadingReport ? '...' : `${reportData?.completedVideosCount || 0} adet`}
+              </span>
             </div>
           </div>
+
+          {/* Category Stats Breakdown */}
+          {reportData && reportData.categoryStats.length > 0 && (
+            <div className="pt-4 border-t border-slate-100 space-y-3">
+              <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Kategori Dağılımı</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {reportData.categoryStats.map((cat) => (
+                  <div key={cat.categoryId} className="p-3 bg-slate-50 rounded-xl flex items-center justify-between text-xs">
+                    <span className="font-semibold text-slate-700">{cat.categoryTitle}</span>
+                    <span className="font-bold text-purple-700">
+                      {formatDurationHuman(cat.watchTimeSeconds)} ({cat.videoCount} video)
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Top Watched Videos */}
+          {reportData && reportData.topWatchedVideos.length > 0 && (
+            <div className="pt-4 border-t border-slate-100 space-y-3">
+              <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">En Çok İzlenen Videolar</h3>
+              <div className="space-y-2">
+                {reportData.topWatchedVideos.map((item) => (
+                  <div key={item.videoId} className="p-3 bg-slate-50 rounded-xl flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2 truncate pr-2">
+                      <Film className="w-4 h-4 text-purple-600 shrink-0" />
+                      <span className="font-semibold text-slate-800 truncate">{item.title}</span>
+                    </div>
+                    <span className="font-bold text-slate-600 shrink-0">
+                      {formatDurationHuman(item.totalSeconds)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Parent PIN Settings Form */}

@@ -4,7 +4,7 @@ import { MainLayout } from '../components/layout/MainLayout';
 import { ROUTES } from '../constants/routes.constants';
 import { supabase, isSupabaseConfigured } from '../services/supabase.client';
 import { useAuth } from '../hooks/useAuth';
-import { UserPlus, Sparkles, AlertCircle } from 'lucide-react';
+import { UserPlus, Sparkles, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
@@ -16,6 +16,7 @@ export const RegisterPage: React.FC = () => {
   const [selectedAccountType, setSelectedAccountType] = useState<'child' | 'parent'>('child');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,24 +53,14 @@ export const RegisterPage: React.FC = () => {
         setError(authError.message);
         setIsLoading(false);
       } else {
-        if (data.user) {
-          // Insert initial profile record with sanitized role
-          const { error: profileError } = await supabase.from('profiles').insert({
-            id: data.user.id,
-            first_name: firstName,
-            last_name: lastName,
-            role: safeRole,
-          });
-
-          if (profileError) {
-            setError(`Profil kaydı oluşturulamadı: ${profileError.message}`);
-            setIsLoading(false);
-            return;
-          }
+        if (data.session) {
+          await refreshSession();
+          setIsLoading(false);
+          navigate(ROUTES.HOME, { replace: true });
+        } else {
+          setIsSuccess(true);
+          setIsLoading(false);
         }
-        await refreshSession();
-        setIsLoading(false);
-        navigate(ROUTES.HOME, { replace: true });
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Kayıt gerçekleştirilemedi';
@@ -98,7 +89,26 @@ export const RegisterPage: React.FC = () => {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {isSuccess ? (
+          <div className="text-center py-4 space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-sm">
+              <CheckCircle2 className="w-8 h-8" />
+            </div>
+            <h2 className="text-xl font-bold text-slate-800">E-Posta Doğrulaması Gerekli</h2>
+            <p className="text-xs text-slate-600 leading-relaxed max-w-sm mx-auto">
+              Kayıt işleminiz başarıyla tamamlandı. Lütfen <strong>{email}</strong> adresinize gönderilen doğrulama e-postasını kontrol edin ve hesabınızı aktifleştirin.
+            </p>
+            <div className="pt-2">
+              <Link
+                to={ROUTES.LOGIN}
+                className="inline-flex items-center justify-center w-full py-3.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-2xl text-xs shadow-md transition-all"
+              >
+                Giriş Sayfasına Git
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Adınız *</label>
@@ -190,6 +200,7 @@ export const RegisterPage: React.FC = () => {
             )}
           </button>
         </form>
+        )}
 
         <div className="mt-6 text-center text-xs text-slate-500">
           Zaten hesabınız var mı?{' '}
