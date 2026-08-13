@@ -283,8 +283,8 @@ GRANT EXECUTE ON FUNCTION public.verify_parent_pin(TEXT) TO authenticated;
 REVOKE EXECUTE ON FUNCTION public.update_parent_pin(TEXT, TEXT) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.update_parent_pin(TEXT, TEXT) TO authenticated;
 
-REVOKE EXECUTE ON FUNCTION public.update_parent_settings(INT, TEXT[], TIME, TIME) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.update_parent_settings(INT, TEXT[], TIME, TIME) TO authenticated;
+REVOKE EXECUTE ON FUNCTION public.update_parent_settings(INT, TEXT[], TEXT, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.update_parent_settings(INT, TEXT[], TEXT, TEXT) TO authenticated;
 
 REVOKE EXECUTE ON FUNCTION public.increment_video_view_count(UUID) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.increment_video_view_count(UUID) TO authenticated;
