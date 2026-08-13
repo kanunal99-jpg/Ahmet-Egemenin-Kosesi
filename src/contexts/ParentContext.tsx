@@ -115,4 +115,3 @@ export const useParentContext = (): ParentContextType => {
   }
   return context;
 };
-
