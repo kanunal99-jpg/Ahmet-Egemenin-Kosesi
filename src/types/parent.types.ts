@@ -10,9 +10,12 @@ export type ReportTimePeriod =
 export interface ParentSettings {
   id: string;
   user_id: string;
+  failed_attempts: number;
+  locked_until: string | null;
+  is_locked: boolean;
+  has_pin?: boolean;
   pin_failed_attempts?: number;
   pin_locked_until?: string | null;
-  is_locked?: boolean;
   daily_time_limit_minutes: number | null;
   allowed_categories: string[] | null;
   bedtime_start?: string | null;
@@ -20,6 +23,7 @@ export interface ParentSettings {
   created_at: string;
   updated_at: string;
 }
+
 
 export interface CategoryUsageStats {
   categoryId: string;

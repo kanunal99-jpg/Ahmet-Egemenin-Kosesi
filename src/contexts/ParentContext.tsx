@@ -22,6 +22,33 @@ export const ParentProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const isLockedOut = lockoutRemainingSeconds > 0;
 
+  // Invariant: Always reset parent unlock status and session attempts when user switches or logs out
+  useEffect(() => {
+    setIsParentUnlocked(false);
+    setFailedAttempts(0);
+    setLockoutRemainingSeconds(0);
+
+    if (!user?.id) return;
+
+    // Check remote lockout state on mount or user switch
+    let isMounted = true;
+    parentService.getSettings(user.id).then((settings) => {
+      if (!isMounted || !settings) return;
+      if (settings.is_locked && settings.locked_until) {
+        const diffMs = new Date(settings.locked_until).getTime() - Date.now();
+        if (diffMs > 0) {
+          const remainingSecs = Math.ceil(diffMs / 1000);
+          setLockoutRemainingSeconds(remainingSecs);
+        }
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id]);
+
+  // Interval timer for local lockout countdown
   useEffect(() => {
     let timer: NodeJS.Timeout;
     if (lockoutRemainingSeconds > 0) {
@@ -47,10 +74,12 @@ export const ParentProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     if (res.success) {
       setIsParentUnlocked(true);
       setFailedAttempts(0);
+      setLockoutRemainingSeconds(0);
       return { success: true };
     } else {
       if (res.isLocked) {
-        setLockoutRemainingSeconds(900); // 15 minutes lockout in DB
+        // Authoritative database lockout policy is 15 minutes (900 seconds)
+        setLockoutRemainingSeconds(Math.floor(APP_CONFIG.PIN_LOCKOUT_MS / 1000));
       }
       return {
         success: false,
@@ -86,3 +115,4 @@ export const useParentContext = (): ParentContextType => {
   }
   return context;
 };
+

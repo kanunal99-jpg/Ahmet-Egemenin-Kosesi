@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { UserRole, UserProfile } from '../types';
+import React, { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
+import { UserRole, UserProfile, AuthSessionStatus } from '../types';
 import { authService } from '../services/auth.service';
 import { supabase, isSupabaseConfigured } from '../services/supabase.client';
 
@@ -7,6 +7,7 @@ interface AuthContextType {
   user: { id: string; email?: string } | null;
   profile: UserProfile | null;
   role: UserRole;
+  authStatus: AuthSessionStatus;
   isLoading: boolean;
   error: string | null;
   signOut: () => Promise<void>;
@@ -19,25 +20,42 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [role, setRole] = useState<UserRole>('guest');
+  const [authStatus, setAuthStatus] = useState<AuthSessionStatus>('NO_SESSION');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  const requestSequenceRef = useRef<number>(0);
+
   const refreshSession = async () => {
+    const sequenceId = ++requestSequenceRef.current;
     setIsLoading(true);
+
     try {
       const sessionData = await authService.getCurrentSession();
+      if (sequenceId !== requestSequenceRef.current) return;
+
       setUser(sessionData.user);
       setProfile(sessionData.profile);
       setRole(sessionData.role);
-      setError(null);
+      setAuthStatus(sessionData.status);
+
+      if (sessionData.status === 'PROFILE_QUERY_ERROR') {
+        setError(sessionData.error || 'Profil sorgulanırken veritabanı hatası oluştu.');
+      } else {
+        setError(null);
+      }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Session load failed';
+      if (sequenceId !== requestSequenceRef.current) return;
+      const msg = err instanceof Error ? err.message : 'Oturum yüklenemedi';
       setError(msg);
       setUser(null);
       setProfile(null);
       setRole('guest');
+      setAuthStatus('PROFILE_QUERY_ERROR');
     } finally {
-      setIsLoading(false);
+      if (sequenceId === requestSequenceRef.current) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -56,10 +74,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const handleSignOut = async () => {
+    requestSequenceRef.current++;
     await authService.signOut();
     setUser(null);
     setProfile(null);
     setRole('guest');
+    setAuthStatus('NO_SESSION');
+    setError(null);
   };
 
   return (
@@ -68,6 +89,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         user,
         profile,
         role,
+        authStatus,
         isLoading,
         error,
         signOut: handleSignOut,
@@ -86,3 +108,4 @@ export const useAuthContext = (): AuthContextType => {
   }
   return context;
 };
+

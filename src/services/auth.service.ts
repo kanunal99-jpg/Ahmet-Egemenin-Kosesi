@@ -1,52 +1,131 @@
 import { supabase, isSupabaseConfigured } from './supabase.client';
-import { UserProfile, UserRole } from '../types';
+import { UserProfile, UserRole, SessionResult, AuthSessionStatus } from '../types';
 
 export class AuthService {
-  async getProfile(userId: string): Promise<UserProfile | null> {
-    if (!isSupabaseConfigured) return null;
+  /**
+   * Retrieves profile with explicit status distinction:
+   * PROFILE_FOUND | PROFILE_NOT_FOUND | PROFILE_QUERY_ERROR
+   */
+  async getProfileResult(userId: string): Promise<{
+    profile: UserProfile | null;
+    status: Extract<AuthSessionStatus, 'PROFILE_FOUND' | 'PROFILE_NOT_FOUND' | 'PROFILE_QUERY_ERROR'>;
+    error?: string;
+  }> {
+    if (!isSupabaseConfigured || !userId) {
+      return { profile: null, status: 'PROFILE_NOT_FOUND' };
+    }
 
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
 
-      if (error || !data) return null;
+      if (error) {
+        return {
+          profile: null,
+          status: 'PROFILE_QUERY_ERROR',
+          error: error.message,
+        };
+      }
+
+      if (!data) {
+        return {
+          profile: null,
+          status: 'PROFILE_NOT_FOUND',
+        };
+      }
 
       return {
-        id: data.id,
-        first_name: data.first_name,
-        last_name: data.last_name,
-        avatar_path: data.avatar_path,
-        role: (data.role as UserRole) || 'guest',
-        created_at: data.created_at,
-        updated_at: data.updated_at,
+        profile: {
+          id: data.id,
+          first_name: data.first_name,
+          last_name: data.last_name,
+          avatar_path: data.avatar_path,
+          role: (data.role as UserRole) || 'child',
+          created_at: data.created_at,
+          updated_at: data.updated_at,
+        },
+        status: 'PROFILE_FOUND',
       };
-    } catch {
-      return null;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Bilinmeyen profil sorgu hatası';
+      return {
+        profile: null,
+        status: 'PROFILE_QUERY_ERROR',
+        error: msg,
+      };
     }
   }
 
-  async getCurrentSession() {
-    if (!isSupabaseConfigured) return { user: null, profile: null, role: 'guest' as UserRole };
+  async getProfile(userId: string): Promise<UserProfile | null> {
+    const res = await this.getProfileResult(userId);
+    return res.profile;
+  }
+
+  /**
+   * Evaluates current session and returns explicit status contract
+   */
+  async getCurrentSession(): Promise<SessionResult> {
+    if (!isSupabaseConfigured) {
+      return { user: null, profile: null, role: 'guest', status: 'NO_SESSION' };
+    }
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) {
-        return { user: null, profile: null, role: 'guest' as UserRole };
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) {
+        return {
+          user: null,
+          profile: null,
+          role: 'guest',
+          status: 'NO_SESSION',
+          error: sessionError.message,
+        };
       }
 
-      const profile = await this.getProfile(session.user.id);
-      const role: UserRole = profile?.role || 'guest';
+      if (!session?.user) {
+        return { user: null, profile: null, role: 'guest', status: 'NO_SESSION' };
+      }
 
+      const { profile, status, error: profileErr } = await this.getProfileResult(session.user.id);
+
+      if (status === 'PROFILE_FOUND' && profile) {
+        return {
+          user: { id: session.user.id, email: session.user.email },
+          profile,
+          role: profile.role,
+          status: 'PROFILE_FOUND',
+        };
+      }
+
+      if (status === 'PROFILE_QUERY_ERROR') {
+        return {
+          user: { id: session.user.id, email: session.user.email },
+          profile: null,
+          role: 'guest',
+          status: 'PROFILE_QUERY_ERROR',
+          error: profileErr || 'Profil sorgusu sırasında veritabanı hatası oluştu.',
+        };
+      }
+
+      // PROFILE_NOT_FOUND (Auth user exists, but no profiles row yet)
       return {
         user: { id: session.user.id, email: session.user.email },
-        profile,
-        role,
+        profile: null,
+        role: 'guest',
+        status: 'PROFILE_NOT_FOUND',
+        error: 'Kullanıcı profili bulunamadı.',
       };
-    } catch {
-      return { user: null, profile: null, role: 'guest' as UserRole };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Oturum yüklenemedi';
+      return {
+        user: null,
+        profile: null,
+        role: 'guest',
+        status: 'PROFILE_QUERY_ERROR',
+        error: msg,
+      };
     }
   }
 
@@ -61,3 +140,4 @@ export class AuthService {
 }
 
 export const authService = new AuthService();
+

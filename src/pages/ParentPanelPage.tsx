@@ -11,8 +11,11 @@ export const ParentPanelPage: React.FC = () => {
   const [selectedPeriod, setSelectedPeriod] = useState<ReportTimePeriod>('weekly');
   const [reportData, setReportData] = useState<UsageReportData | null>(null);
   const [isLoadingReport, setIsLoadingReport] = useState<boolean>(false);
+  const [currentPin, setCurrentPin] = useState<string>('');
   const [newPin, setNewPin] = useState<string>('');
+  const [hasExistingPin, setHasExistingPin] = useState<boolean>(true);
   const [pinMessage, setPinMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isUpdatingPin, setIsUpdatingPin] = useState<boolean>(false);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -37,6 +40,13 @@ export const ParentPanelPage: React.FC = () => {
         }
       });
 
+    // Check if user already has a PIN
+    parentService.getSettings(user.id).then((settings) => {
+      if (isMounted && settings) {
+        setHasExistingPin(settings.has_pin !== false);
+      }
+    });
+
     return () => {
       isMounted = false;
     };
@@ -56,18 +66,31 @@ export const ParentPanelPage: React.FC = () => {
     e.preventDefault();
     if (!user?.id) return;
     if (newPin.length < 4) {
-      setPinMessage({ type: 'error', text: 'PIN 4 haneli olmalıdır.' });
+      setPinMessage({ type: 'error', text: 'Yeni PIN 4 haneli olmalıdır.' });
       return;
     }
 
-    const res = await parentService.updatePin(user.id, newPin);
+    if (hasExistingPin && currentPin.length < 4) {
+      setPinMessage({ type: 'error', text: 'Lütfen mevcut 4 haneli PIN kodunuzu girin.' });
+      return;
+    }
+
+    setIsUpdatingPin(true);
+    setPinMessage(null);
+
+    const res = await parentService.updatePin(user.id, newPin, hasExistingPin ? currentPin : undefined);
+    setIsUpdatingPin(false);
+
     if (res.success) {
       setPinMessage({ type: 'success', text: 'Ebeveyn PIN kodu başarıyla güncellendi!' });
       setNewPin('');
+      setCurrentPin('');
+      setHasExistingPin(true);
     } else {
       setPinMessage({ type: 'error', text: res.error || 'PIN güncellenemedi.' });
     }
   };
+
 
   return (
     <MainLayout>
@@ -196,8 +219,24 @@ export const ParentPanelPage: React.FC = () => {
           )}
 
           <form onSubmit={handleUpdatePin} className="space-y-4">
+            {hasExistingPin && (
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Mevcut 4 Haneli PIN</label>
+                <input
+                  type="password"
+                  maxLength={4}
+                  value={currentPin}
+                  onChange={(e) => setCurrentPin(e.target.value.replace(/\D/g, ''))}
+                  placeholder="••••"
+                  className="w-full text-center text-xl tracking-widest font-mono font-bold py-2.5 px-4 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+            )}
+
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Yeni 4 Haneli PIN</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                {hasExistingPin ? 'Yeni 4 Haneli PIN' : '4 Haneli Ebeveyn PIN Belirleyin'}
+              </label>
               <input
                 type="password"
                 maxLength={4}
@@ -210,12 +249,13 @@ export const ParentPanelPage: React.FC = () => {
 
             <button
               type="submit"
-              disabled={newPin.length < 4}
+              disabled={isUpdatingPin || newPin.length < 4 || (hasExistingPin && currentPin.length < 4)}
               className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-md transition-all text-xs"
             >
-              PIN&apos;i Güncelle
+              {isUpdatingPin ? 'Güncelleniyor...' : hasExistingPin ? 'PIN\'i Güncelle' : 'PIN Oluştur'}
             </button>
           </form>
+
         </div>
       </div>
     </MainLayout>
