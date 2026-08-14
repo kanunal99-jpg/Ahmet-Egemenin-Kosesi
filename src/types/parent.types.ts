@@ -35,8 +35,11 @@ export interface ParentSettings {
 export interface CategoryUsageStats {
   categoryId: string;
   categoryTitle: string;
+  categoryName?: string;
+  categoryIcon?: string | null;
   watchTimeSeconds: number;
-  videoCount: number;
+  percentage?: number;
+  videoCount?: number;
 }
 
 export interface UsageReportData {

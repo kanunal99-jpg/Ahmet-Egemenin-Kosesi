@@ -416,9 +416,9 @@ export const ParentPanelPage: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {reportData.categoryStats.map((cat) => (
                   <div key={cat.categoryId} className="p-3 bg-slate-50 rounded-xl flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-700">{cat.categoryTitle}</span>
+                    <span className="font-semibold text-slate-700">{cat.categoryName || cat.categoryTitle}</span>
                     <span className="font-bold text-purple-700">
-                      {formatDurationHuman(cat.watchTimeSeconds)} ({cat.videoCount} video)
+                      {formatDurationHuman(cat.watchTimeSeconds)} {cat.videoCount !== undefined ? `(${cat.videoCount} video)` : ''}
                     </span>
                   </div>
                 ))}
