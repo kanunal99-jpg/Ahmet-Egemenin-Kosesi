@@ -8,7 +8,8 @@ export type PlaybackAuthorizationReason =
   | 'BEDTIME'
   | 'DAILY_LIMIT'
   | 'SETTINGS_UNAVAILABLE'
-  | 'AUTHORIZATION_ERROR';
+  | 'AUTHORIZATION_ERROR'
+  | 'SESSION_AUTHORIZATION_FAILED';
 
 export interface PlaybackAuthorization {
   allowed: boolean;

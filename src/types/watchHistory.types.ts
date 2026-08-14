@@ -10,6 +10,15 @@ export interface WatchHistory {
   video?: Video;
 }
 
+export interface WatchSessionStartResult {
+  success: boolean;
+  allowed?: boolean;
+  sessionId?: string;
+  reason?: string;
+  error?: string;
+  reused?: boolean;
+}
+
 export interface WatchHistorySession {
   id: string;
   user_id: string;

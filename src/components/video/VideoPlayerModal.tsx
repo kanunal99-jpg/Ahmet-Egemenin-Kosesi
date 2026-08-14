@@ -81,20 +81,12 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
   useEffect(() => {
     if (!video || !youtubeId || authState !== 'authorized') return;
 
+    let isMounted = true;
     hasIncrementedView.current = false;
     activePlayTimeSecondsRef.current = 0;
     maxWatchedTimeSecondsRef.current = 0;
     isCompletedRef.current = false;
     activeSessionIdRef.current = null;
-
-    // Start watch session in DB if user logged in
-    if (user?.id) {
-      watchHistoryService.startSession(video.id).then((res) => {
-        if (res.success && res.sessionId) {
-          activeSessionIdRef.current = res.sessionId;
-        }
-      });
-    }
 
     const startPlayingTimer = () => {
       if (activeIntervalRef.current !== null) return;
@@ -135,7 +127,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
     };
 
     const initPlayer = () => {
-      if (!iframeContainerRef.current || !window.YT || !window.YT.Player) return;
+      if (!iframeContainerRef.current || !window.YT || !window.YT.Player || !isMounted) return;
 
       iframeContainerRef.current.innerHTML = '<div id="yt-player-element" class="w-full h-full"></div>';
 
@@ -156,23 +148,45 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
       }
     };
 
-    // Load YouTube IFrame API if not already loaded
-    if (!window.YT) {
-      const existingScript = document.getElementById('youtube-iframe-api');
-      if (!existingScript) {
-        const script = document.createElement('script');
-        script.id = 'youtube-iframe-api';
-        script.src = 'https://www.youtube.com/iframe_api';
-        document.body.appendChild(script);
-      }
+    const setupPlayerFlow = () => {
+      // Load YouTube IFrame API if not already loaded
+      if (!window.YT) {
+        const existingScript = document.getElementById('youtube-iframe-api');
+        if (!existingScript) {
+          const script = document.createElement('script');
+          script.id = 'youtube-iframe-api';
+          script.src = 'https://www.youtube.com/iframe_api';
+          document.body.appendChild(script);
+        }
 
-      const previousOnReady = window.onYouTubeIframeAPIReady;
-      window.onYouTubeIframeAPIReady = () => {
-        if (previousOnReady) previousOnReady();
+        const previousOnReady = window.onYouTubeIframeAPIReady;
+        window.onYouTubeIframeAPIReady = () => {
+          if (previousOnReady) previousOnReady();
+          initPlayer();
+        };
+      } else {
         initPlayer();
-      };
+      }
+    };
+
+    // If user is logged in, start session in DB first (CRIT-18 Server Check)
+    if (user?.id) {
+      watchHistoryService.startSession(video.id).then((res) => {
+        if (!isMounted) return;
+
+        if (res.success && res.sessionId) {
+          activeSessionIdRef.current = res.sessionId;
+          setupPlayerFlow();
+        } else {
+          // If startSession denied by server (e.g. daily limit/bedtime trigger)
+          setAuthState('denied');
+          setAuthReason((res.reason as PlaybackAuthorizationReason) || 'SESSION_AUTHORIZATION_FAILED');
+          setAuthMessage(res.error || 'Video başlatılamadı, ebeveyn koruması nedeniyle işlem reddedildi.');
+        }
+      });
     } else {
-      initPlayer();
+      // Public / guest view
+      setupPlayerFlow();
     }
 
     // Visibility change listener: pause timer/video when tab is backgrounded
@@ -188,6 +202,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
+      isMounted = false;
       stopPlayingTimer();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
 

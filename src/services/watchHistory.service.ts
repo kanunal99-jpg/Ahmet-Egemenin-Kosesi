@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabase.client';
-import { WatchHistory, WatchProgressInput, ServiceOperationResult } from '../types';
+import { WatchHistory, WatchProgressInput, WatchSessionStartResult, ServiceOperationResult } from '../types';
 
 export class WatchHistoryService {
   async getUserHistory(userId: string): Promise<WatchHistory[]> {
@@ -23,11 +23,12 @@ export class WatchHistoryService {
   }
 
   /**
-   * Starts a new watch session in watch_history_sessions table via RPC (CRIT-08)
+   * Starts a new watch session in watch_history_sessions table via RPC (CRIT-08 & CRIT-18)
+   * Hardened: Verifies server-side authorization and sessionId before returning success
    */
-  async startSession(videoId: string): Promise<{ success: boolean; sessionId?: string; error?: string }> {
+  async startSession(videoId: string): Promise<WatchSessionStartResult> {
     if (!isSupabaseConfigured || !videoId) {
-      return { success: false, error: 'Database unconfigured or video missing' };
+      return { success: false, allowed: false, error: 'Database unconfigured or video missing' };
     }
 
     try {
@@ -36,18 +37,37 @@ export class WatchHistoryService {
       });
 
       if (error) {
-        return { success: false, error: error.message };
+        return { success: false, allowed: false, error: error.message };
       }
 
-      const res = data as { success?: boolean; session_id?: string; error?: string };
-      if (!res || !res.success || !res.session_id) {
-        return { success: false, error: res?.error || 'Failed to start session' };
+      const res = data as {
+        success?: boolean;
+        allowed?: boolean;
+        session_id?: string;
+        reason?: string;
+        error?: string;
+        reused?: boolean;
+      };
+
+      if (!res || !res.success || !res.session_id || res.allowed === false) {
+        return {
+          success: false,
+          allowed: false,
+          reason: res?.reason || 'SESSION_AUTHORIZATION_FAILED',
+          error: res?.error || 'Failed to start authorized session',
+        };
       }
 
-      return { success: true, sessionId: res.session_id };
+      return {
+        success: true,
+        allowed: true,
+        sessionId: res.session_id,
+        reason: res.reason,
+        reused: Boolean(res.reused),
+      };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error starting session';
-      return { success: false, error: msg };
+      return { success: false, allowed: false, error: msg };
     }
   }
 
