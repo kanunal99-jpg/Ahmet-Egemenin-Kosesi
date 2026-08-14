@@ -22,6 +22,66 @@ export class WatchHistoryService {
     }
   }
 
+  /**
+   * Starts a new watch session in watch_history_sessions table via RPC (CRIT-08)
+   */
+  async startSession(videoId: string): Promise<{ success: boolean; sessionId?: string; error?: string }> {
+    if (!isSupabaseConfigured || !videoId) {
+      return { success: false, error: 'Database unconfigured or video missing' };
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('start_watch_session', {
+        p_video_id: videoId,
+      });
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
+      const res = data as { success?: boolean; session_id?: string; error?: string };
+      if (!res || !res.success || !res.session_id) {
+        return { success: false, error: res?.error || 'Failed to start session' };
+      }
+
+      return { success: true, sessionId: res.session_id };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error starting session';
+      return { success: false, error: msg };
+    }
+  }
+
+  /**
+   * Finalizes an active watch session in watch_history_sessions table via RPC (CRIT-08)
+   */
+  async finalizeSession(
+    sessionId: string,
+    watchedSeconds: number,
+    completed: boolean = false
+  ): Promise<{ success: boolean; error?: string }> {
+    if (!isSupabaseConfigured || !sessionId) {
+      return { success: false, error: 'Database unconfigured or session missing' };
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('finalize_watch_session', {
+        p_session_id: sessionId,
+        p_watched_seconds: Math.max(0, Math.floor(watchedSeconds)),
+        p_completed: completed,
+      });
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
+      const res = data as { success?: boolean; error?: string };
+      return { success: Boolean(res?.success), error: res?.error };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error finalizing session';
+      return { success: false, error: msg };
+    }
+  }
+
   async getProgress(userId: string, videoId: string): Promise<WatchHistory | null> {
     if (!isSupabaseConfigured || !userId || !videoId) return null;
 

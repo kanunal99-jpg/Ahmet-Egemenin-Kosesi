@@ -4,9 +4,9 @@ import { getYouTubeEmbedUrl, extractYouTubeId } from '../../utils/youtube.utils'
 import { useAuth } from '../../hooks/useAuth';
 import { watchHistoryService } from '../../services/watchHistory.service';
 import { videoService } from '../../services/video.service';
-import { parentService } from '../../services/parent.service';
-import { isWithinTimeRange, formatDurationHuman } from '../../utils/formatters.utils';
-import { X, Moon, Clock } from 'lucide-react';
+import { parentalControlService } from '../../services/parentalControl.service';
+import { PlaybackAuthorizationReason } from '../../types/parentalControl.types';
+import { X, Moon, Clock, ShieldAlert, AlertCircle, Loader2 } from 'lucide-react';
 
 declare global {
   interface Window {
@@ -20,78 +20,79 @@ interface VideoPlayerModalProps {
   onClose: () => void;
 }
 
+type AuthState = 'checking' | 'authorized' | 'denied' | 'error';
+
 export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClose }) => {
   const { user } = useAuth();
   const playerRef = useRef<any>(null);
   const iframeContainerRef = useRef<HTMLDivElement>(null);
   const activeIntervalRef = useRef<number | null>(null);
   
+  // Watch session & tracking refs (CRIT-08)
+  const activeSessionIdRef = useRef<string | null>(null);
   const hasIncrementedView = useRef<boolean>(false);
   const activePlayTimeSecondsRef = useRef<number>(0);
   const maxWatchedTimeSecondsRef = useRef<number>(0);
   const isCompletedRef = useRef<boolean>(false);
 
-  const [restrictionError, setRestrictionError] = useState<{ type: 'bedtime' | 'time_limit'; message: string } | null>(null);
+  // Fail-Closed Authorization state (CRIT-07, CRIT-16)
+  const [authState, setAuthState] = useState<AuthState>('checking');
+  const [authReason, setAuthReason] = useState<PlaybackAuthorizationReason>('OK');
+  const [authMessage, setAuthMessage] = useState<string>('');
 
   const youtubeId = video ? extractYouTubeId(video.video_url) : null;
   const embedUrl = video ? getYouTubeEmbedUrl(video.video_url) : null;
 
+  // Step 1: Server-Side Playback Authorization Check (FAIL-CLOSED)
   useEffect(() => {
-    if (!video) return;
+    if (!video?.id) return;
 
-    setRestrictionError(null);
+    let isMounted = true;
+    setAuthState('checking');
+    setAuthMessage('');
 
-    // Check parental controls (bedtime and daily limit) if logged in
-    if (user?.id) {
-      parentService.getSettings(user.id).then(async (settings) => {
-        if (!settings) return;
+    parentalControlService
+      .authorizePlayback(video.id)
+      .then((res) => {
+        if (!isMounted) return;
 
-        // 1. Bedtime check
-        if (settings.bedtime_start && settings.bedtime_end) {
-          if (isWithinTimeRange(settings.bedtime_start, settings.bedtime_end)) {
-            setRestrictionError({
-              type: 'bedtime',
-              message: `😴 Uyku Vakti Geldi (${settings.bedtime_start} - ${settings.bedtime_end})! Ahmet Egemen dinleniyor. Lütfen daha sonra tekrar gel.`,
-            });
-            return;
-          }
+        if (res.allowed) {
+          setAuthState('authorized');
+          setAuthReason('OK');
+        } else {
+          setAuthState(res.reason === 'AUTHORIZATION_ERROR' || res.reason === 'SETTINGS_UNAVAILABLE' ? 'error' : 'denied');
+          setAuthReason(res.reason);
+          setAuthMessage(res.message || 'Bu videoyu izleme izniniz bulunmuyor.');
         }
-
-        // 2. Daily time limit check
-        if (settings.daily_time_limit_minutes && settings.daily_time_limit_minutes > 0) {
-          try {
-            const report = await parentService.getUsageReport(user.id, 'daily');
-            const todaySeconds = report.totalWatchTimeSeconds;
-            const maxSeconds = settings.daily_time_limit_minutes * 60;
-            if (todaySeconds >= maxSeconds) {
-              setRestrictionError({
-                type: 'time_limit',
-                message: `⏰ Günlük İzleme Süreniz Doldu (${settings.daily_time_limit_minutes} dakika)! Bugün toplam ${formatDurationHuman(todaySeconds)} video izlendi. Yarın görüşmek üzere!`,
-              });
-              return;
-            }
-          } catch {
-            // Ignored
-          }
-        }
+      })
+      .catch((err) => {
+        if (!isMounted) return;
+        setAuthState('error');
+        setAuthReason('AUTHORIZATION_ERROR');
+        setAuthMessage('Ebeveyn denetimi yetkilendirmesi sırasında bir bağlantı sorunu oluştu.');
       });
-    }
-  }, [video, user?.id]);
 
+    return () => {
+      isMounted = false;
+    };
+  }, [video?.id]);
+
+  // Step 2: Initialize YouTube Player and Session Tracking ONLY IF AUTHORIZED
   useEffect(() => {
-    if (!video || !youtubeId || restrictionError) return;
+    if (!video || !youtubeId || authState !== 'authorized') return;
 
     hasIncrementedView.current = false;
     activePlayTimeSecondsRef.current = 0;
     maxWatchedTimeSecondsRef.current = 0;
     isCompletedRef.current = false;
+    activeSessionIdRef.current = null;
 
-    // Save initial history entry (progress = 0)
+    // Start watch session in DB if user logged in
     if (user?.id) {
-      watchHistoryService.saveProgress(user.id, {
-        video_id: video.id,
-        progress_seconds: 0,
-        completed: false,
+      watchHistoryService.startSession(video.id).then((res) => {
+        if (res.success && res.sessionId) {
+          activeSessionIdRef.current = res.sessionId;
+        }
       });
     }
 
@@ -190,40 +191,46 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
       stopPlayingTimer();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
 
-      // Save watch history on close if logged in
-      if (video && user?.id) {
-        let finalProgress = maxWatchedTimeSecondsRef.current;
-        let totalDuration = video.duration > 0 ? video.duration : 60;
+      // Finalize watch session and save progress on close
+      const sessionId = activeSessionIdRef.current;
+      const watchedSecs = activePlayTimeSecondsRef.current;
+      let finalProgress = maxWatchedTimeSecondsRef.current;
+      let totalDuration = video.duration > 0 ? video.duration : 60;
 
-        if (playerRef.current) {
-          if (typeof playerRef.current.getCurrentTime === 'function') {
-            const curr = Math.floor(playerRef.current.getCurrentTime() || 0);
-            if (curr > finalProgress) finalProgress = curr;
-          }
-          if (typeof playerRef.current.getDuration === 'function') {
-            const dur = Math.floor(playerRef.current.getDuration() || 0);
-            if (dur > 0) totalDuration = dur;
-          }
-          try {
-            playerRef.current.destroy();
-          } catch {}
+      if (playerRef.current) {
+        if (typeof playerRef.current.getCurrentTime === 'function') {
+          const curr = Math.floor(playerRef.current.getCurrentTime() || 0);
+          if (curr > finalProgress) finalProgress = curr;
         }
-
-        const isCompleted =
-          isCompletedRef.current ||
-          (totalDuration > 0 && finalProgress / totalDuration >= 0.9) ||
-          (totalDuration > 0 && activePlayTimeSecondsRef.current / totalDuration >= 0.9);
-
-        if (finalProgress > 1 || activePlayTimeSecondsRef.current > 1) {
-          watchHistoryService.saveProgress(user.id, {
-            video_id: video.id,
-            progress_seconds: finalProgress,
-            completed: isCompleted,
-          });
+        if (typeof playerRef.current.getDuration === 'function') {
+          const dur = Math.floor(playerRef.current.getDuration() || 0);
+          if (dur > 0) totalDuration = dur;
         }
+        try {
+          playerRef.current.destroy();
+        } catch {}
+      }
+
+      const isCompleted =
+        isCompletedRef.current ||
+        (totalDuration > 0 && finalProgress / totalDuration >= 0.9) ||
+        (totalDuration > 0 && watchedSecs / totalDuration >= 0.9);
+
+      // Finalize DB session (CRIT-08)
+      if (sessionId && watchedSecs > 0) {
+        watchHistoryService.finalizeSession(sessionId, watchedSecs, isCompleted);
+      }
+
+      // Upsert current progress in watch_history
+      if (user?.id && (finalProgress > 1 || watchedSecs > 1)) {
+        watchHistoryService.saveProgress(user.id, {
+          video_id: video.id,
+          progress_seconds: finalProgress,
+          completed: isCompleted,
+        });
       }
     };
-  }, [video, user?.id, youtubeId, restrictionError]);
+  }, [video, user?.id, youtubeId, authState]);
 
   if (!video) return null;
 
@@ -241,19 +248,37 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
           </button>
         </div>
 
-        {/* Video Embed Frame or Restriction Message */}
+        {/* Video Embed Frame or Fail-Closed Guard Message */}
         <div className="relative aspect-video w-full bg-black flex items-center justify-center">
-          {restrictionError ? (
-            <div className="p-8 max-w-md text-center space-y-4 bg-slate-900/90 rounded-3xl border border-slate-800 m-4">
+          {authState === 'checking' ? (
+            <div className="p-8 text-center space-y-3 bg-slate-900/90 rounded-3xl border border-slate-800 m-4">
+              <Loader2 className="w-8 h-8 text-purple-400 animate-spin mx-auto" />
+              <h4 className="text-sm font-bold text-white">Ebeveyn Yetkilendirmesi Doğrulanıyor...</h4>
+              <p className="text-xs text-slate-400">Güvenli izleme kuralları sunucuda kontrol ediliyor.</p>
+            </div>
+          ) : authState === 'denied' || authState === 'error' ? (
+            <div className="p-8 max-w-md text-center space-y-4 bg-slate-900/90 rounded-3xl border border-slate-800 m-4 animate-fade-in">
               <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center mx-auto shadow-inner">
-                {restrictionError.type === 'bedtime' ? (
+                {authReason === 'BEDTIME' ? (
                   <Moon className="w-8 h-8 text-indigo-400" />
-                ) : (
+                ) : authReason === 'DAILY_LIMIT' ? (
                   <Clock className="w-8 h-8 text-amber-400" />
+                ) : authReason === 'CATEGORY_RESTRICTED' ? (
+                  <ShieldAlert className="w-8 h-8 text-rose-400" />
+                ) : (
+                  <AlertCircle className="w-8 h-8 text-amber-400" />
                 )}
               </div>
-              <h4 className="text-lg font-black text-white">Ebeveyn Koruması Devrede</h4>
-              <p className="text-xs text-slate-300 leading-relaxed">{restrictionError.message}</p>
+              <h4 className="text-lg font-black text-white">
+                {authReason === 'BEDTIME'
+                  ? 'Uyku Vakti Devrede'
+                  : authReason === 'DAILY_LIMIT'
+                  ? 'Günlük Süre Limiti Doldu'
+                  : authReason === 'CATEGORY_RESTRICTED'
+                  ? 'Kategori Kısıtlaması'
+                  : 'Oynatma Engellendi'}
+              </h4>
+              <p className="text-xs text-slate-300 leading-relaxed">{authMessage}</p>
               <button
                 onClick={onClose}
                 className="px-6 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition-all shadow-md"
@@ -283,3 +308,4 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
     </div>
   );
 };
+

@@ -1,3 +1,10 @@
+export interface ParentChild {
+  id: string;
+  childId: string;
+  childName?: string;
+  createdAt: string;
+}
+
 export type ReportTimePeriod =
   | 'daily'
   | 'weekly'

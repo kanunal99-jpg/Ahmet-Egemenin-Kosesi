@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { MainLayout } from '../components/layout/MainLayout';
-import { ReportTimePeriod, UsageReportData } from '../types';
+import { ReportTimePeriod, UsageReportData, ParentChild } from '../types';
 import { Shield, Key, BarChart3, CheckCircle2, Film, Sliders, Clock, Moon, Check } from 'lucide-react';
 import { parentService } from '../services/parent.service';
 import { useAuth } from '../hooks/useAuth';
 import { useParent } from '../hooks/useParent';
 import { formatDurationHuman } from '../utils/formatters.utils';
 import { DEFAULT_CATEGORIES } from '../constants/categories.constants';
+import { ChildSelector } from '../components/parent/ChildSelector';
 
 export const ParentPanelPage: React.FC = () => {
   const { user } = useAuth();
@@ -15,6 +16,11 @@ export const ParentPanelPage: React.FC = () => {
   const [reportData, setReportData] = useState<UsageReportData | null>(null);
   const [isLoadingReport, setIsLoadingReport] = useState<boolean>(false);
   
+  // Children state (CRIT-06)
+  const [childrenList, setChildrenList] = useState<ParentChild[]>([]);
+  const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
+  const [isLoadingChildren, setIsLoadingChildren] = useState<boolean>(false);
+
   // PIN Form State
   const [currentPin, setCurrentPin] = useState<string>('');
   const [newPin, setNewPin] = useState<string>('');
@@ -31,14 +37,39 @@ export const ParentPanelPage: React.FC = () => {
   const [isSavingSettings, setIsSavingSettings] = useState<boolean>(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState<boolean>(false);
 
+  // Fetch children list on mount
   useEffect(() => {
     if (!user?.id) return;
     let isMounted = true;
+    setIsLoadingChildren(true);
+
+    parentService.getMyChildren().then((children) => {
+      if (isMounted) {
+        setChildrenList(children);
+        if (children.length > 0) {
+          setSelectedChildId(children[0].childId);
+        } else {
+          setSelectedChildId(user.id);
+        }
+        setIsLoadingChildren(false);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id]);
+
+  // Load report data whenever selectedChildId or selectedPeriod changes
+  useEffect(() => {
+    const targetId = selectedChildId || user?.id;
+    if (!targetId) return;
+
+    let isMounted = true;
     setIsLoadingReport(true);
-    setIsLoadingSettings(true);
 
     parentService
-      .getUsageReport(user.id, selectedPeriod)
+      .getUsageReport(targetId, selectedPeriod)
       .then((data) => {
         if (isMounted) {
           setReportData(data);
@@ -55,7 +86,17 @@ export const ParentPanelPage: React.FC = () => {
         }
       });
 
-    // Load parent settings from RPC
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedChildId, selectedPeriod, user?.id]);
+
+  // Load parent settings from RPC on mount
+  useEffect(() => {
+    if (!user?.id) return;
+    let isMounted = true;
+    setIsLoadingSettings(true);
+
     parentService.getSettings(user.id).then((settings) => {
       if (isMounted && settings) {
         setHasExistingPin(settings.has_pin !== false);
@@ -70,7 +111,17 @@ export const ParentPanelPage: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [user?.id, selectedPeriod]);
+  }, [user?.id]);
+
+  const handleLinkChild = async (childId: string) => {
+    const res = await parentService.linkChild(childId);
+    if (res.success) {
+      const updated = await parentService.getMyChildren();
+      setChildrenList(updated);
+      setSelectedChildId(childId);
+    }
+    return res;
+  };
 
   const periods: { id: ReportTimePeriod; label: string }[] = [
     { id: 'daily', label: 'Günlük' },
@@ -301,6 +352,15 @@ export const ParentPanelPage: React.FC = () => {
             </button>
           </form>
         </div>
+
+        {/* Child Selector Component (CRIT-06) */}
+        <ChildSelector
+          childrenList={childrenList}
+          selectedChildId={selectedChildId}
+          onSelectChild={(childId) => setSelectedChildId(childId)}
+          onLinkChild={handleLinkChild}
+          isLoading={isLoadingChildren}
+        />
 
         {/* Time Period Selector for Reports */}
         <div className="bg-white p-6 rounded-3xl border border-amber-100 shadow-sm space-y-4">
