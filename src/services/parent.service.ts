@@ -22,7 +22,7 @@ export class ParentService {
   /**
    * Verifies PIN strictly server-side via RPC with lockout handling
    */
-  async verifyUserPin(userId: string | undefined, pin: string): Promise<{ success: boolean; message?: string; isLocked?: boolean }> {
+  async verifyUserPin(userId: string | undefined, pin: string): Promise<{ success: boolean; message?: string; isLocked?: boolean; needsSetup?: boolean }> {
     if (!userId || !isSupabaseConfigured) {
       return { success: false, message: 'Veritabanı bağlantısı yok.' };
     }
@@ -41,11 +41,12 @@ export class ParentService {
       }
 
       if (typeof data === 'object' && data !== null) {
-        const obj = data as { success?: boolean; message?: string; is_locked?: boolean };
+        const obj = data as { success?: boolean; message?: string; is_locked?: boolean; needs_setup?: boolean };
         return {
           success: Boolean(obj.success),
           message: obj.message,
           isLocked: Boolean(obj.is_locked),
+          needsSetup: Boolean(obj.needs_setup),
         };
       }
       return { success: false, message: 'Geçersiz yanıt.' };

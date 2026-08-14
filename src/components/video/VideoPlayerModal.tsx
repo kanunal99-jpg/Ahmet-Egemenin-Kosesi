@@ -1,10 +1,12 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Video } from '../../types';
 import { getYouTubeEmbedUrl, extractYouTubeId } from '../../utils/youtube.utils';
 import { useAuth } from '../../hooks/useAuth';
 import { watchHistoryService } from '../../services/watchHistory.service';
 import { videoService } from '../../services/video.service';
-import { X } from 'lucide-react';
+import { parentService } from '../../services/parent.service';
+import { isWithinTimeRange, formatDurationHuman } from '../../utils/formatters.utils';
+import { X, Moon, Clock } from 'lucide-react';
 
 declare global {
   interface Window {
@@ -29,11 +31,55 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
   const maxWatchedTimeSecondsRef = useRef<number>(0);
   const isCompletedRef = useRef<boolean>(false);
 
+  const [restrictionError, setRestrictionError] = useState<{ type: 'bedtime' | 'time_limit'; message: string } | null>(null);
+
   const youtubeId = video ? extractYouTubeId(video.video_url) : null;
   const embedUrl = video ? getYouTubeEmbedUrl(video.video_url) : null;
 
   useEffect(() => {
-    if (!video || !youtubeId) return;
+    if (!video) return;
+
+    setRestrictionError(null);
+
+    // Check parental controls (bedtime and daily limit) if logged in
+    if (user?.id) {
+      parentService.getSettings(user.id).then(async (settings) => {
+        if (!settings) return;
+
+        // 1. Bedtime check
+        if (settings.bedtime_start && settings.bedtime_end) {
+          if (isWithinTimeRange(settings.bedtime_start, settings.bedtime_end)) {
+            setRestrictionError({
+              type: 'bedtime',
+              message: `😴 Uyku Vakti Geldi (${settings.bedtime_start} - ${settings.bedtime_end})! Ahmet Egemen dinleniyor. Lütfen daha sonra tekrar gel.`,
+            });
+            return;
+          }
+        }
+
+        // 2. Daily time limit check
+        if (settings.daily_time_limit_minutes && settings.daily_time_limit_minutes > 0) {
+          try {
+            const report = await parentService.getUsageReport(user.id, 'daily');
+            const todaySeconds = report.totalWatchTimeSeconds;
+            const maxSeconds = settings.daily_time_limit_minutes * 60;
+            if (todaySeconds >= maxSeconds) {
+              setRestrictionError({
+                type: 'time_limit',
+                message: `⏰ Günlük İzleme Süreniz Doldu (${settings.daily_time_limit_minutes} dakika)! Bugün toplam ${formatDurationHuman(todaySeconds)} video izlendi. Yarın görüşmek üzere!`,
+              });
+              return;
+            }
+          } catch {
+            // Ignored
+          }
+        }
+      });
+    }
+  }, [video, user?.id]);
+
+  useEffect(() => {
+    if (!video || !youtubeId || restrictionError) return;
 
     hasIncrementedView.current = false;
     activePlayTimeSecondsRef.current = 0;
@@ -177,7 +223,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
         }
       }
     };
-  }, [video, user?.id, youtubeId]);
+  }, [video, user?.id, youtubeId, restrictionError]);
 
   if (!video) return null;
 
@@ -195,9 +241,27 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
           </button>
         </div>
 
-        {/* Video Embed Frame */}
-        <div className="relative aspect-video w-full bg-black">
-          {youtubeId ? (
+        {/* Video Embed Frame or Restriction Message */}
+        <div className="relative aspect-video w-full bg-black flex items-center justify-center">
+          {restrictionError ? (
+            <div className="p-8 max-w-md text-center space-y-4 bg-slate-900/90 rounded-3xl border border-slate-800 m-4">
+              <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center mx-auto shadow-inner">
+                {restrictionError.type === 'bedtime' ? (
+                  <Moon className="w-8 h-8 text-indigo-400" />
+                ) : (
+                  <Clock className="w-8 h-8 text-amber-400" />
+                )}
+              </div>
+              <h4 className="text-lg font-black text-white">Ebeveyn Koruması Devrede</h4>
+              <p className="text-xs text-slate-300 leading-relaxed">{restrictionError.message}</p>
+              <button
+                onClick={onClose}
+                className="px-6 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition-all shadow-md"
+              >
+                Anladım, Kapat
+              </button>
+            </div>
+          ) : youtubeId ? (
             <div ref={iframeContainerRef} className="w-full h-full">
               <div id="yt-player-element" className="w-full h-full" />
             </div>

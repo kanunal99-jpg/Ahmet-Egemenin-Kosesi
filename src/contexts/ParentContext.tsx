@@ -8,8 +8,12 @@ interface ParentContextType {
   failedAttempts: number;
   isLockedOut: boolean;
   lockoutRemainingSeconds: number;
-  unlockParentMode: (pin: string) => Promise<{ success: boolean; error?: string }>;
+  hasPin: boolean | null;
+  needsPinSetup: boolean;
+  unlockParentMode: (pin: string) => Promise<{ success: boolean; error?: string; needsSetup?: boolean }>;
+  setupInitialPin: (newPin: string) => Promise<{ success: boolean; error?: string }>;
   lockParentMode: () => void;
+  refreshSettings: () => Promise<void>;
 }
 
 const ParentContext = createContext<ParentContextType | undefined>(undefined);
@@ -19,33 +23,42 @@ export const ParentProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [isParentUnlocked, setIsParentUnlocked] = useState<boolean>(false);
   const [failedAttempts, setFailedAttempts] = useState<number>(0);
   const [lockoutRemainingSeconds, setLockoutRemainingSeconds] = useState<number>(0);
+  const [hasPin, setHasPin] = useState<boolean | null>(null);
+  const [needsPinSetup, setNeedsPinSetup] = useState<boolean>(false);
 
   const isLockedOut = lockoutRemainingSeconds > 0;
+
+  const refreshSettings = async () => {
+    if (!user?.id) return;
+    try {
+      const settings = await parentService.getSettings(user.id);
+      if (settings) {
+        setHasPin(settings.has_pin !== false);
+        setNeedsPinSetup(settings.has_pin === false);
+        if (settings.is_locked && settings.locked_until) {
+          const diffMs = new Date(settings.locked_until).getTime() - Date.now();
+          if (diffMs > 0) {
+            const remainingSecs = Math.ceil(diffMs / 1000);
+            setLockoutRemainingSeconds(remainingSecs);
+          }
+        }
+      }
+    } catch {
+      // Ignored - defaults preserved
+    }
+  };
 
   // Invariant: Always reset parent unlock status and session attempts when user switches or logs out
   useEffect(() => {
     setIsParentUnlocked(false);
     setFailedAttempts(0);
     setLockoutRemainingSeconds(0);
+    setHasPin(null);
+    setNeedsPinSetup(false);
 
     if (!user?.id) return;
 
-    // Check remote lockout state on mount or user switch
-    let isMounted = true;
-    parentService.getSettings(user.id).then((settings) => {
-      if (!isMounted || !settings) return;
-      if (settings.is_locked && settings.locked_until) {
-        const diffMs = new Date(settings.locked_until).getTime() - Date.now();
-        if (diffMs > 0) {
-          const remainingSecs = Math.ceil(diffMs / 1000);
-          setLockoutRemainingSeconds(remainingSecs);
-        }
-      }
-    });
-
-    return () => {
-      isMounted = false;
-    };
+    refreshSettings();
   }, [user?.id]);
 
   // Interval timer for local lockout countdown
@@ -61,7 +74,7 @@ export const ParentProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     };
   }, [lockoutRemainingSeconds]);
 
-  const unlockParentMode = async (pin: string): Promise<{ success: boolean; error?: string }> => {
+  const unlockParentMode = async (pin: string): Promise<{ success: boolean; error?: string; needsSetup?: boolean }> => {
     if (isLockedOut) {
       return {
         success: false,
@@ -75,8 +88,19 @@ export const ParentProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       setIsParentUnlocked(true);
       setFailedAttempts(0);
       setLockoutRemainingSeconds(0);
+      setHasPin(true);
+      setNeedsPinSetup(false);
       return { success: true };
     } else {
+      if (res.needsSetup) {
+        setNeedsPinSetup(true);
+        setHasPin(false);
+        return {
+          success: false,
+          needsSetup: true,
+          error: res.message || 'Lütfen önce Ebeveyn PIN kodunuzu oluşturun.',
+        };
+      }
       if (res.isLocked) {
         // Authoritative database lockout policy is 15 minutes (900 seconds)
         setLockoutRemainingSeconds(Math.floor(APP_CONFIG.PIN_LOCKOUT_MS / 1000));
@@ -85,6 +109,24 @@ export const ParentProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         success: false,
         error: res.message || 'Hatalı PIN!',
       };
+    }
+  };
+
+  const setupInitialPin = async (newPin: string): Promise<{ success: boolean; error?: string }> => {
+    if (!user?.id) {
+      return { success: false, error: 'Oturum açılmamış.' };
+    }
+
+    const res = await parentService.updatePin(user.id, newPin);
+    if (res.success) {
+      setIsParentUnlocked(true);
+      setHasPin(true);
+      setNeedsPinSetup(false);
+      setFailedAttempts(0);
+      setLockoutRemainingSeconds(0);
+      return { success: true };
+    } else {
+      return { success: false, error: res.error || 'PIN oluşturulamadı.' };
     }
   };
 
@@ -99,8 +141,12 @@ export const ParentProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         failedAttempts,
         isLockedOut,
         lockoutRemainingSeconds,
+        hasPin,
+        needsPinSetup,
         unlockParentMode,
+        setupInitialPin,
         lockParentMode,
+        refreshSettings,
       }}
     >
       {children}

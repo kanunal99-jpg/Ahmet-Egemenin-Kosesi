@@ -1,26 +1,41 @@
 import React, { useState, useEffect } from 'react';
 import { MainLayout } from '../components/layout/MainLayout';
 import { ReportTimePeriod, UsageReportData } from '../types';
-import { Shield, Key, BarChart3, CheckCircle2, Film } from 'lucide-react';
+import { Shield, Key, BarChart3, CheckCircle2, Film, Sliders, Clock, Moon, Check } from 'lucide-react';
 import { parentService } from '../services/parent.service';
 import { useAuth } from '../hooks/useAuth';
+import { useParent } from '../hooks/useParent';
 import { formatDurationHuman } from '../utils/formatters.utils';
+import { DEFAULT_CATEGORIES } from '../constants/categories.constants';
 
 export const ParentPanelPage: React.FC = () => {
   const { user } = useAuth();
+  const { refreshSettings } = useParent();
   const [selectedPeriod, setSelectedPeriod] = useState<ReportTimePeriod>('weekly');
   const [reportData, setReportData] = useState<UsageReportData | null>(null);
   const [isLoadingReport, setIsLoadingReport] = useState<boolean>(false);
+  
+  // PIN Form State
   const [currentPin, setCurrentPin] = useState<string>('');
   const [newPin, setNewPin] = useState<string>('');
   const [hasExistingPin, setHasExistingPin] = useState<boolean>(true);
   const [pinMessage, setPinMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isUpdatingPin, setIsUpdatingPin] = useState<boolean>(false);
 
+  // Parental Control Settings State
+  const [dailyTimeLimitMinutes, setDailyTimeLimitMinutes] = useState<number | null>(null);
+  const [allowedCategories, setAllowedCategories] = useState<string[]>([]);
+  const [bedtimeStart, setBedtimeStart] = useState<string>('');
+  const [bedtimeEnd, setBedtimeEnd] = useState<string>('');
+  const [settingsMessage, setSettingsMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isSavingSettings, setIsSavingSettings] = useState<boolean>(false);
+  const [isLoadingSettings, setIsLoadingSettings] = useState<boolean>(false);
+
   useEffect(() => {
     if (!user?.id) return;
     let isMounted = true;
     setIsLoadingReport(true);
+    setIsLoadingSettings(true);
 
     parentService
       .getUsageReport(user.id, selectedPeriod)
@@ -40,10 +55,15 @@ export const ParentPanelPage: React.FC = () => {
         }
       });
 
-    // Check if user already has a PIN
+    // Load parent settings from RPC
     parentService.getSettings(user.id).then((settings) => {
       if (isMounted && settings) {
         setHasExistingPin(settings.has_pin !== false);
+        setDailyTimeLimitMinutes(settings.daily_time_limit_minutes ?? null);
+        setAllowedCategories(settings.allowed_categories || []);
+        setBedtimeStart(settings.bedtime_start || '');
+        setBedtimeEnd(settings.bedtime_end || '');
+        setIsLoadingSettings(false);
       }
     });
 
@@ -86,11 +106,40 @@ export const ParentPanelPage: React.FC = () => {
       setNewPin('');
       setCurrentPin('');
       setHasExistingPin(true);
+      await refreshSettings();
     } else {
       setPinMessage({ type: 'error', text: res.error || 'PIN güncellenemedi.' });
     }
   };
 
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user?.id) return;
+
+    setIsSavingSettings(true);
+    setSettingsMessage(null);
+
+    const res = await parentService.updateSettings(user.id, {
+      daily_time_limit_minutes: dailyTimeLimitMinutes,
+      allowed_categories: allowedCategories.length > 0 ? allowedCategories : null,
+      bedtime_start: bedtimeStart ? bedtimeStart : null,
+      bedtime_end: bedtimeEnd ? bedtimeEnd : null,
+    });
+    setIsSavingSettings(false);
+
+    if (res.success) {
+      setSettingsMessage({ type: 'success', text: 'Ebeveyn kontrol ayarları başarıyla kaydedildi!' });
+      await refreshSettings();
+    } else {
+      setSettingsMessage({ type: 'error', text: res.error || 'Ayarlar kaydedilemedi.' });
+    }
+  };
+
+  const toggleCategory = (categoryId: string) => {
+    setAllowedCategories((prev) =>
+      prev.includes(categoryId) ? prev.filter((id) => id !== categoryId) : [...prev, categoryId]
+    );
+  };
 
   return (
     <MainLayout>
@@ -104,7 +153,7 @@ export const ParentPanelPage: React.FC = () => {
             <div>
               <h1 className="text-2xl font-black text-slate-800">Ebeveyn Yönetim Paneli</h1>
               <p className="text-xs text-slate-500 font-medium">
-                Çocuğunuzun platform üzerindeki izleme alışkanlıklarını ve raporlarını inceleyin.
+                Çocuğunuzun platform üzerindeki izleme alışkanlıklarını, filtrelerini ve süre limitlerini yönetin.
               </p>
             </div>
           </div>
@@ -112,6 +161,145 @@ export const ParentPanelPage: React.FC = () => {
             <CheckCircle2 className="w-4 h-4 text-purple-600" />
             Ebeveyn Doğrulaması Aktif
           </div>
+        </div>
+
+        {/* Parental Controls Configuration Form */}
+        <div className="bg-white p-6 rounded-3xl border border-amber-100 shadow-sm space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <Sliders className="w-5 h-5 text-purple-600" />
+              Ebeveyn Koruması ve Kısıtlamalar
+            </h2>
+          </div>
+
+          {settingsMessage && (
+            <div
+              className={`p-3 rounded-2xl text-xs font-semibold ${
+                settingsMessage.type === 'success'
+                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                  : 'bg-rose-50 text-rose-800 border border-rose-200'
+              }`}
+            >
+              {settingsMessage.text}
+            </div>
+          )}
+
+          <form onSubmit={handleSaveSettings} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Daily Time Limit */}
+              <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                <div className="flex items-center gap-2 text-slate-800 font-bold text-sm">
+                  <Clock className="w-4 h-4 text-amber-600" />
+                  Günlük İzleme Süresi Sınırı
+                </div>
+                <p className="text-xs text-slate-500">
+                  Çocuğunuzun günde en fazla kaç dakika video izleyebileceğini belirleyin.
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
+                  {[
+                    { val: null, label: 'Limitsiz' },
+                    { val: 30, label: '30 Dk' },
+                    { val: 60, label: '1 Saat' },
+                    { val: 120, label: '2 Saat' },
+                  ].map((opt) => (
+                    <button
+                      key={String(opt.val)}
+                      type="button"
+                      onClick={() => setDailyTimeLimitMinutes(opt.val)}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border ${
+                        dailyTimeLimitMinutes === opt.val
+                          ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Bedtime Restriction */}
+              <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                <div className="flex items-center gap-2 text-slate-800 font-bold text-sm">
+                  <Moon className="w-4 h-4 text-indigo-600" />
+                  Uyku Vakti Kısıtlaması
+                </div>
+                <p className="text-xs text-slate-500">
+                  Bu saatler arasında çocuk ekranında uyku dinlenme modu gösterilir.
+                </p>
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">Başlangıç (Örn: 21:00)</label>
+                    <input
+                      type="time"
+                      value={bedtimeStart}
+                      onChange={(e) => setBedtimeStart(e.target.value)}
+                      className="w-full py-2 px-3 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">Bitiş (Örn: 07:00)</label>
+                    <input
+                      type="time"
+                      value={bedtimeEnd}
+                      onChange={(e) => setBedtimeEnd(e.target.value)}
+                      className="w-full py-2 px-3 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Allowed Categories */}
+            <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">İzin Verilen Kategoriler</h3>
+                  <p className="text-xs text-slate-500">
+                    Seçim yapılmazsa tüm kategorilere izin verilir. Seçilenler dışındakiler gizlenir.
+                  </p>
+                </div>
+                {allowedCategories.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setAllowedCategories([])}
+                    className="text-xs text-purple-600 font-bold hover:underline"
+                  >
+                    Tümüne İzin Ver
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 pt-2">
+                {DEFAULT_CATEGORIES.map((cat) => {
+                  const isChecked = allowedCategories.length === 0 || allowedCategories.includes(cat.id);
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => toggleCategory(cat.id)}
+                      className={`p-3 rounded-xl text-xs font-bold transition-all border flex items-center justify-between text-left ${
+                        isChecked
+                          ? 'bg-purple-50 text-purple-900 border-purple-200 shadow-xs'
+                          : 'bg-white text-slate-400 border-slate-200 opacity-60'
+                      }`}
+                    >
+                      <span className="truncate">{cat.title}</span>
+                      {isChecked && <Check className="w-3.5 h-3.5 text-purple-600 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSavingSettings || isLoadingSettings}
+              className="px-6 py-3 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-md transition-all text-xs flex items-center gap-2"
+            >
+              {isSavingSettings ? 'Kaydediliyor...' : 'Ayarları Kaydet ve Uygula'}
+            </button>
+          </form>
         </div>
 
         {/* Time Period Selector for Reports */}
@@ -255,7 +443,6 @@ export const ParentPanelPage: React.FC = () => {
               {isUpdatingPin ? 'Güncelleniyor...' : hasExistingPin ? 'PIN\'i Güncelle' : 'PIN Oluştur'}
             </button>
           </form>
-
         </div>
       </div>
     </MainLayout>

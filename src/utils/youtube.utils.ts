@@ -1,13 +1,19 @@
 /**
- * Extracts YouTube video ID from various YouTube URL formats
+ * Extracts YouTube video ID from various YouTube URL formats (watch, youtu.be, embed, shorts, etc.)
  */
 export function extractYouTubeId(url: string): string | null {
   if (!url) return null;
+  const trimmed = url.trim();
 
-  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-  const match = url.match(regExp);
+  // If already an 11-char YouTube ID
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
+    return trimmed;
+  }
 
-  return match && match[2].length === 11 ? match[2] : null;
+  const regExp = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=|shorts\/)|youtu\.be\/)([^"&?\/\s]{11})/i;
+  const match = trimmed.match(regExp);
+
+  return match && match[1] && match[1].length === 11 ? match[1] : null;
 }
 
 /**

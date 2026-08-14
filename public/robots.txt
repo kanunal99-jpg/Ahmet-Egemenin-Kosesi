@@ -1,7 +1,9 @@
 # robots.txt for Ahmet Egemen'in Köşesi
 User-agent: *
 Allow: /
-Disallow: /ebeveyn-paneli
+Disallow: /parent-panel
+Disallow: /favorites
+Disallow: /history
 Disallow: /login
 Disallow: /register
 

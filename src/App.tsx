@@ -21,6 +21,7 @@ export default function App() {
         <ParentProvider>
           <Routes>
             <Route path={ROUTES.HOME} element={<HomePage />} />
+            <Route path={ROUTES.CATEGORY} element={<HomePage />} />
             <Route
               path={ROUTES.FAVORITES}
               element={

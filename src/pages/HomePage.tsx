@@ -1,21 +1,57 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { MainLayout } from '../components/layout/MainLayout';
 import { VideoGrid } from '../components/video/VideoGrid';
 import { VideoPlayerModal } from '../components/video/VideoPlayerModal';
 import { DEFAULT_CATEGORIES } from '../constants/categories.constants';
 import { useVideos } from '../hooks/useVideos';
+import { useAuth } from '../hooks/useAuth';
+import { parentService } from '../services/parent.service';
 import { Video } from '../types';
 import { Sparkles, Search, Compass } from 'lucide-react';
 
 export const HomePage: React.FC = () => {
+  const { slug } = useParams<{ slug?: string }>();
+  const { user } = useAuth();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeVideo, setActiveVideo] = useState<Video | null>(null);
+  const [allowedCategoryIds, setAllowedCategoryIds] = useState<string[] | null>(null);
+
+  // Sync category selection with route slug
+  useEffect(() => {
+    if (slug) {
+      const match = DEFAULT_CATEGORIES.find((c) => c.slug === slug);
+      if (match) {
+        setSelectedCategory(match.id);
+      }
+    }
+  }, [slug]);
+
+  // Load allowed categories if restricted by parent
+  useEffect(() => {
+    if (!user?.id) return;
+    parentService.getSettings(user.id).then((settings) => {
+      if (settings?.allowed_categories && settings.allowed_categories.length > 0) {
+        setAllowedCategoryIds(settings.allowed_categories);
+      } else {
+        setAllowedCategoryIds(null);
+      }
+    });
+  }, [user?.id]);
 
   const { videos, isLoading, refetch } = useVideos({
     categoryId: selectedCategory || undefined,
     searchQuery: searchQuery || undefined,
   });
+
+  const visibleCategories = allowedCategoryIds
+    ? DEFAULT_CATEGORIES.filter((c) => allowedCategoryIds.includes(c.id))
+    : DEFAULT_CATEGORIES;
+
+  const filteredVideos = allowedCategoryIds
+    ? videos.filter((v) => !v.category_id || allowedCategoryIds.includes(v.category_id))
+    : videos;
 
   return (
     <MainLayout>
@@ -63,7 +99,7 @@ export const HomePage: React.FC = () => {
             Tümü
           </button>
 
-          {DEFAULT_CATEGORIES.map((cat) => (
+          {visibleCategories.map((cat) => (
             <button
               key={cat.id}
               onClick={() => setSelectedCategory(cat.id)}
@@ -83,7 +119,7 @@ export const HomePage: React.FC = () => {
       <div className="space-y-4">
         <h2 className="text-xl font-black text-slate-800 tracking-tight">Öne Çıkan Videolar</h2>
         <VideoGrid
-          videos={videos}
+          videos={filteredVideos}
           onPlay={(v) => setActiveVideo(v)}
           onRefresh={refetch}
           isLoading={isLoading}

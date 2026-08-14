@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useParent } from '../../hooks/useParent';
-import { Shield, Lock, AlertCircle, X } from 'lucide-react';
+import { Shield, Lock, AlertCircle, X, KeyRound } from 'lucide-react';
 
 interface PinModalProps {
   isOpen: boolean;
@@ -9,10 +9,13 @@ interface PinModalProps {
 }
 
 export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess }) => {
-  const { unlockParentMode, isLockedOut, lockoutRemainingSeconds } = useParent();
+  const { unlockParentMode, setupInitialPin, isLockedOut, lockoutRemainingSeconds, needsPinSetup, hasPin } = useParent();
   const [pin, setPin] = useState<string>('');
+  const [confirmPin, setConfirmPin] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  const isSetupMode = needsPinSetup || hasPin === false;
 
   if (!isOpen) return null;
 
@@ -20,6 +23,30 @@ export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess }
     e.preventDefault();
     if (!pin || pin.length < 4) {
       setError('Lütfen 4 haneli PIN kodunuzu eksiksiz girin.');
+      return;
+    }
+
+    if (isSetupMode) {
+      if (pin !== confirmPin) {
+        setError('Girdiğiniz PIN kodları birbiriyle eşleşmiyor.');
+        return;
+      }
+
+      setIsSubmitting(true);
+      setError(null);
+
+      const result = await setupInitialPin(pin);
+      setIsSubmitting(false);
+
+      if (result.success) {
+        setPin('');
+        setConfirmPin('');
+        setError(null);
+        if (onSuccess) onSuccess();
+        onClose();
+      } else {
+        setError(result.error || 'PIN oluşturulamadı.');
+      }
       return;
     }
 
@@ -52,11 +79,15 @@ export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess }
 
         <div className="text-center mb-6">
           <div className="w-16 h-16 rounded-2xl bg-purple-100 text-purple-600 flex items-center justify-center mx-auto mb-3 shadow-inner">
-            <Shield className="w-8 h-8" />
+            {isSetupMode ? <KeyRound className="w-8 h-8" /> : <Shield className="w-8 h-8" />}
           </div>
-          <h3 className="text-xl font-black text-slate-800">Ebeveyn Doğrulaması</h3>
+          <h3 className="text-xl font-black text-slate-800">
+            {isSetupMode ? 'İlk Ebeveyn PIN Oluşturma' : 'Ebeveyn Doğrulaması'}
+          </h3>
           <p className="text-xs text-slate-500 mt-1">
-            Devam etmek için 4 haneli Ebeveyn PIN kodunuzu girin.
+            {isSetupMode
+              ? 'Ebeveyn alanını korumak için 4 haneli yeni bir güvenlik PIN kodu belirleyin.'
+              : 'Devam etmek için 4 haneli Ebeveyn PIN kodunuzu girin.'}
           </p>
         </div>
 
@@ -78,6 +109,9 @@ export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess }
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">
+                {isSetupMode ? '4 Haneli Yeni PIN' : 'PIN Kodu'}
+              </label>
               <input
                 type="password"
                 maxLength={4}
@@ -89,9 +123,23 @@ export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess }
               />
             </div>
 
+            {isSetupMode && (
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">PIN Kodunu Tekrar Girin</label>
+                <input
+                  type="password"
+                  maxLength={4}
+                  value={confirmPin}
+                  onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ''))}
+                  placeholder="••••"
+                  className="w-full text-center text-3xl tracking-widest font-mono font-bold py-3 px-4 rounded-2xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white transition-all"
+                />
+              </div>
+            )}
+
             <button
               type="submit"
-              disabled={isSubmitting || pin.length < 4}
+              disabled={isSubmitting || pin.length < 4 || (isSetupMode && confirmPin.length < 4)}
               className="w-full py-3.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2"
             >
               {isSubmitting ? (
@@ -99,7 +147,7 @@ export const PinModal: React.FC<PinModalProps> = ({ isOpen, onClose, onSuccess }
               ) : (
                 <>
                   <Lock className="w-4 h-4" />
-                  Kilit Aç
+                  {isSetupMode ? 'PIN Kaydet ve Aç' : 'Kilit Aç'}
                 </>
               )}
             </button>
