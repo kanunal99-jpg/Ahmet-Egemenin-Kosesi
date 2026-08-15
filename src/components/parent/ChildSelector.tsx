@@ -6,7 +6,7 @@ interface ChildSelectorProps {
   childrenList: ParentChild[];
   selectedChildId: string | null;
   onSelectChild: (childId: string) => void;
-  onLinkChild: (childId: string) => Promise<{ success: boolean; error?: string }>;
+  onLinkChild: (childEmail: string) => Promise<{ success: boolean; error?: string }>;
   isLoading?: boolean;
 }
 
@@ -18,25 +18,26 @@ export const ChildSelector: React.FC<ChildSelectorProps> = ({
   isLoading = false,
 }) => {
   const [showAddForm, setShowAddForm] = useState(false);
-  const [childIdInput, setChildIdInput] = useState('');
+  const [childEmailInput, setChildEmailInput] = useState('');
   const [isLinking, setIsLinking] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
 
   const handleAddChild = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!childIdInput.trim()) return;
+    const email = childEmailInput.trim().toLowerCase();
+    if (!email) return;
 
     setIsLinking(true);
     setLinkError(null);
 
-    const res = await onLinkChild(childIdInput.trim());
+    const res = await onLinkChild(email);
     setIsLinking(false);
 
     if (res.success) {
-      setChildIdInput('');
+      setChildEmailInput('');
       setShowAddForm(false);
     } else {
-      setLinkError(res.error || 'Çocuk hesabı bağlanamadı. Lütfen geçerli bir çocuk kullanıcı ID girin.');
+      setLinkError(res.error || 'Çocuk hesabı bağlanamadı. Kayıtlı çocuk e-posta adresini kontrol edin.');
     }
   };
 
@@ -68,19 +69,24 @@ export const ChildSelector: React.FC<ChildSelectorProps> = ({
       {showAddForm && (
         <form onSubmit={handleAddChild} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
           <label className="block text-xs font-bold text-slate-700">
-            Çocuk Kullanıcı ID (UUID)
+            Çocuğun Kayıtlı E-Posta Adresi
           </label>
+          <p className="text-[11px] text-slate-500">
+            Çocuk hesabı oluştururken kullanılan e-posta adresini girin. Kullanıcı ID'si veya UUID girmeniz gerekmez.
+          </p>
           <div className="flex flex-col sm:flex-row gap-2">
             <input
-              type="text"
-              value={childIdInput}
-              onChange={(e) => setChildIdInput(e.target.value)}
-              placeholder="Örn: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
-              className="flex-1 px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              type="email"
+              required
+              value={childEmailInput}
+              onChange={(e) => setChildEmailInput(e.target.value)}
+              placeholder="ornek@eposta.com"
+              autoComplete="email"
+              className="flex-1 px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
             <button
               type="submit"
-              disabled={isLinking || !childIdInput.trim()}
+              disabled={isLinking || !childEmailInput.trim()}
               className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-all shadow-sm shrink-0"
             >
               {isLinking ? 'Bağlanıyor...' : 'Bağla'}
