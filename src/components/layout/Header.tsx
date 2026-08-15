@@ -4,7 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useParent } from '../../hooks/useParent';
 import { ROUTES } from '../../constants/routes.constants';
 import { APP_CONFIG } from '../../constants/app.constants';
-import { Heart, History, Shield, LogOut, User, Sparkles, Home, LogIn } from 'lucide-react';
+import { Shield, LogOut, User, Sparkles, Home, LogIn } from 'lucide-react';
 
 export const Header: React.FC = () => {
   const { user, profile, role, signOut } = useAuth();
@@ -45,34 +45,6 @@ export const Header: React.FC = () => {
               <Home className="w-4 h-4" />
               Ana Sayfa
             </Link>
-
-            {user && (
-              <>
-                <Link
-                  to={ROUTES.FAVORITES}
-                  className={`px-4 py-2.5 rounded-2xl font-bold text-sm transition-all flex items-center gap-2 ${
-                    isActive(ROUTES.FAVORITES)
-                      ? 'bg-rose-100 text-rose-900 shadow-xs'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <Heart className="w-4 h-4 text-rose-500" />
-                  Favorilerim
-                </Link>
-
-                <Link
-                  to={ROUTES.HISTORY}
-                  className={`px-4 py-2.5 rounded-2xl font-bold text-sm transition-all flex items-center gap-2 ${
-                    isActive(ROUTES.HISTORY)
-                      ? 'bg-blue-100 text-blue-900 shadow-xs'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <History className="w-4 h-4 text-blue-500" />
-                  İzleme Geçmişi
-                </Link>
-              </>
-            )}
 
             {(role === 'parent' || role === 'admin') && (
               <Link

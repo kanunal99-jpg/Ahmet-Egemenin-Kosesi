@@ -11,7 +11,6 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
-import { ProtectedRoute } from './guards/ProtectedRoute';
 import { ParentRoute } from './guards/ParentRoute';
 
 export default function App() {
@@ -25,17 +24,17 @@ export default function App() {
             <Route
               path={ROUTES.FAVORITES}
               element={
-                <ProtectedRoute>
+                <ParentRoute>
                   <FavoritesPage />
-                </ProtectedRoute>
+                </ParentRoute>
               }
             />
             <Route
               path={ROUTES.HISTORY}
               element={
-                <ProtectedRoute>
+                <ParentRoute>
                   <WatchHistoryPage />
-                </ProtectedRoute>
+                </ParentRoute>
               }
             />
             <Route
