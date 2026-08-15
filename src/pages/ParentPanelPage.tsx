@@ -24,13 +24,14 @@ import { formatDurationHuman } from '../utils/formatters.utils';
 import { DEFAULT_CATEGORIES } from '../constants/categories.constants';
 import { VideoGrid } from '../components/video/VideoGrid';
 import { VideoPlayerModal } from '../components/video/VideoPlayerModal';
+import { ParentVideoManager } from '../components/parent/ParentVideoManager';
 
-type ParentPanelTab = 'reports' | 'history' | 'favorites' | 'controls' | 'pin';
+type ParentPanelTab = 'videos' | 'reports' | 'history' | 'favorites' | 'controls' | 'pin';
 
 export const ParentPanelPage: React.FC = () => {
   const { user } = useAuth();
   const { refreshSettings, lockParentMode } = useParent();
-  const [activeTab, setActiveTab] = useState<ParentPanelTab>('reports');
+  const [activeTab, setActiveTab] = useState<ParentPanelTab>('videos');
   const [activeVideo, setActiveVideo] = useState<Video | null>(null);
 
   // Reports state
@@ -188,6 +189,7 @@ export const ParentPanelPage: React.FC = () => {
   };
 
   const tabs: { id: ParentPanelTab; label: string; icon: React.FC<{ className?: string }> }[] = [
+    { id: 'videos', label: 'Video Yönetimi', icon: Film },
     { id: 'reports', label: 'Kullanım Raporları', icon: BarChart3 },
     { id: 'history', label: 'İzleme Geçmişi', icon: History },
     { id: 'favorites', label: 'Favoriler', icon: Heart },
@@ -207,7 +209,7 @@ export const ParentPanelPage: React.FC = () => {
             <div>
               <h1 className="text-2xl font-black text-slate-800">Ebeveyn Yönetim Paneli</h1>
               <p className="text-xs text-slate-500 font-medium">
-                İzleme geçmişini, favorileri, kullanım raporlarını ve güvenlik kısıtlamalarını yönetin.
+                Videolarınızı ekleyin, izleme geçmişini, favorileri, kullanım raporlarını ve güvenlik kısıtlamalarını yönetin.
               </p>
             </div>
           </div>
@@ -249,7 +251,14 @@ export const ParentPanelPage: React.FC = () => {
           })}
         </div>
 
-        {/* TAB 1: USAGE REPORTS */}
+        {/* TAB 1: VIDEO MANAGEMENT */}
+        {activeTab === 'videos' && (
+          <div>
+            <ParentVideoManager />
+          </div>
+        )}
+
+        {/* TAB 2: USAGE REPORTS */}
         {activeTab === 'reports' && (
           <div className="bg-white p-6 rounded-3xl border border-amber-100 shadow-sm space-y-6">
             <div className="flex items-center justify-between">
@@ -298,141 +307,163 @@ export const ParentPanelPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Category Stats Breakdown */}
-            {reportData && reportData.categoryStats.length > 0 && (
-              <div className="pt-4 border-t border-slate-100 space-y-3">
-                <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Kategori Dağılımı</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {reportData.categoryStats.map((cat) => (
-                    <div key={cat.categoryId} className="p-3 bg-slate-50 rounded-xl flex items-center justify-between text-xs">
-                      <span className="font-semibold text-slate-700">{cat.categoryName || cat.categoryTitle}</span>
-                      <span className="font-bold text-purple-700">
-                        {formatDurationHuman(cat.watchTimeSeconds)} {cat.videoCount !== undefined ? `(${cat.videoCount} video)` : ''}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Top Watched Videos */}
-            {reportData && reportData.topWatchedVideos.length > 0 && (
-              <div className="pt-4 border-t border-slate-100 space-y-3">
-                <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">En Çok İzlenen Videolar</h3>
-                <div className="space-y-2">
-                  {reportData.topWatchedVideos.map((item) => (
-                    <div key={item.videoId} className="p-3 bg-slate-50 rounded-xl flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2 truncate pr-2">
-                        <Film className="w-4 h-4 text-purple-600 shrink-0" />
-                        <span className="font-semibold text-slate-800 truncate">{item.title}</span>
+            {/* Category Breakdown */}
+            <div className="pt-4 border-t border-slate-100">
+              <h3 className="text-sm font-bold text-slate-800 mb-3">Kategoriye Göre İzleme Dağılımı</h3>
+              {isLoadingReport ? (
+                <div className="text-center py-6 text-slate-400 text-xs">Yükleniyor...</div>
+              ) : reportData?.categories && reportData.categories.length > 0 ? (
+                <div className="space-y-3">
+                  {reportData.categories.map((c) => (
+                    <div key={c.category_id} className="space-y-1">
+                      <div className="flex justify-between text-xs font-bold text-slate-700">
+                        <span>{c.name}</span>
+                        <span>{formatDurationHuman(c.seconds)} ({c.percentage}%)</span>
                       </div>
-                      <span className="font-bold text-slate-600 shrink-0">
-                        {formatDurationHuman(item.totalSeconds)}
-                      </span>
+                      <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className="h-full bg-purple-500 rounded-full"
+                          style={{ width: `${c.percentage}%` }}
+                        />
+                      </div>
                     </div>
                   ))}
                 </div>
+              ) : (
+                <div className="text-center py-6 text-slate-400 text-xs bg-slate-50 rounded-2xl">
+                  Bu dönem için izleme verisi bulunamadı.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: WATCH HISTORY */}
+        {activeTab === 'history' && (
+          <div className="space-y-4">
+            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <History className="w-5 h-5 text-purple-600" />
+                  İzleme Geçmişi
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Daha önce izlenen tüm videolar ve izleme ilerlemeleri.
+                </p>
               </div>
+              <button
+                onClick={() => refetchHistory()}
+                className="px-3 py-1.5 text-xs font-bold bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl border border-slate-200"
+              >
+                Yenile
+              </button>
+            </div>
+
+            {isLoadingHistory ? (
+              <div className="text-center py-12 bg-white rounded-3xl border border-slate-100 text-slate-400 text-sm">
+                Geçmiş yükleniyor...
+              </div>
+            ) : historyVideos.length === 0 ? (
+              <div className="text-center py-12 bg-white rounded-3xl border border-slate-100 text-slate-400 text-sm">
+                Henüz izlenmiş video geçmişi bulunmuyor.
+              </div>
+            ) : (
+              <VideoGrid
+                videos={historyVideos}
+                onPlayVideo={(v) => setActiveVideo(v)}
+              />
             )}
           </div>
         )}
 
-        {/* TAB 2: WATCH HISTORY */}
-        {activeTab === 'history' && (
-          <div className="bg-white p-6 rounded-3xl border border-blue-100 shadow-sm space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center">
-                  <History className="w-5 h-5" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-slate-800">İzleme Geçmişi</h2>
-                  <p className="text-xs text-slate-500 font-medium">Daha önce izlenen tüm içerikler ve kalınan yerler.</p>
-                </div>
-              </div>
-            </div>
-
-            <VideoGrid
-              videos={historyVideos}
-              onPlay={(v) => setActiveVideo(v)}
-              onRefresh={refetchHistory}
-              isLoading={isLoadingHistory}
-            />
-          </div>
-        )}
-
-        {/* TAB 3: FAVORITES */}
+        {/* TAB 4: FAVORITES */}
         {activeTab === 'favorites' && (
-          <div className="bg-white p-6 rounded-3xl border border-rose-100 shadow-sm space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center">
-                  <Heart className="w-5 h-5 fill-current" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-slate-800">Favori İçerikler</h2>
-                  <p className="text-xs text-slate-500 font-medium">Beğenilen ve kaydedilen tüm videolar.</p>
-                </div>
+          <div className="space-y-4">
+            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <Heart className="w-5 h-5 text-rose-500" />
+                  Favori Videolar
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Favorilere eklenen tüm içerikler.
+                </p>
               </div>
+              <button
+                onClick={() => refetchFavorites()}
+                className="px-3 py-1.5 text-xs font-bold bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl border border-slate-200"
+              >
+                Yenile
+              </button>
             </div>
 
-            <VideoGrid
-              videos={favoriteVideos}
-              onPlay={(v) => setActiveVideo(v)}
-              onRefresh={refetchFavorites}
-              isLoading={isLoadingFavorites}
-            />
+            {isLoadingFavorites ? (
+              <div className="text-center py-12 bg-white rounded-3xl border border-slate-100 text-slate-400 text-sm">
+                Favoriler yükleniyor...
+              </div>
+            ) : favoriteVideos.length === 0 ? (
+              <div className="text-center py-12 bg-white rounded-3xl border border-slate-100 text-slate-400 text-sm">
+                Henüz favorilere eklenmiş bir video yok.
+              </div>
+            ) : (
+              <VideoGrid
+                videos={favoriteVideos}
+                onPlayVideo={(v) => setActiveVideo(v)}
+              />
+            )}
           </div>
         )}
 
-        {/* TAB 4: PARENTAL CONTROLS & RESTRICTIONS */}
+        {/* TAB 5: CONTROLS & TIME LIMITS */}
         {activeTab === 'controls' && (
-          <div className="bg-white p-6 rounded-3xl border border-amber-100 shadow-sm space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <Sliders className="w-5 h-5 text-purple-600" />
-                Ebeveyn Koruması ve Kısıtlamalar
-              </h2>
-            </div>
+          <div className="bg-white p-6 rounded-3xl border border-purple-100 shadow-sm space-y-6">
+            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <Sliders className="w-5 h-5 text-purple-600" />
+              Kullanım Kısıtlamaları ve Süre Sınırı
+            </h2>
 
             {settingsMessage && (
               <div
-                className={`p-3 rounded-2xl text-xs font-semibold ${
+                className={`p-4 rounded-2xl text-xs font-bold flex items-center gap-2 ${
                   settingsMessage.type === 'success'
                     ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                     : 'bg-rose-50 text-rose-800 border border-rose-200'
                 }`}
               >
+                {settingsMessage.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                ) : (
+                  <Key className="w-4 h-4 text-rose-600" />
+                )}
                 {settingsMessage.text}
               </div>
             )}
 
-            <form onSubmit={handleSaveSettings} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Daily Time Limit */}
-                <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                  <div className="flex items-center gap-2 text-slate-800 font-bold text-sm">
-                    <Clock className="w-4 h-4 text-amber-600" />
-                    Günlük İzleme Süresi Sınırı
+            {isLoadingSettings ? (
+              <div className="text-center py-6 text-slate-400 text-xs">Ayarlar yükleniyor...</div>
+            ) : (
+              <form onSubmit={handleSaveSettings} className="space-y-6">
+                {/* Daily Limit */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-purple-600" />
+                    <span className="text-sm font-bold text-slate-800">Günlük İzleme Süre Sınırı</span>
                   </div>
-                  <p className="text-xs text-slate-500">
-                    Günde en fazla kaç dakika video izlenebileceğini belirleyin.
-                  </p>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {[
-                      { val: null, label: 'Limitsiz' },
-                      { val: 30, label: '30 Dk' },
+                      { val: null, label: 'Sınırsız' },
+                      { val: 30, label: '30 Dakika' },
                       { val: 60, label: '1 Saat' },
                       { val: 120, label: '2 Saat' },
                     ].map((opt) => (
                       <button
-                        key={String(opt.val)}
                         type="button"
+                        key={String(opt.val)}
                         onClick={() => setDailyTimeLimitMinutes(opt.val)}
-                        className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border ${
+                        className={`p-3 rounded-2xl border text-xs font-bold transition-all ${
                           dailyTimeLimitMinutes === opt.val
                             ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
-                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                         }`}
                       >
                         {opt.label}
@@ -441,107 +472,106 @@ export const ParentPanelPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Bedtime Restriction */}
-                <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                  <div className="flex items-center gap-2 text-slate-800 font-bold text-sm">
-                    <Moon className="w-4 h-4 text-indigo-600" />
-                    Uyku Vakti Kısıtlaması
+                {/* Bedtime Limits */}
+                <div className="space-y-3 pt-4 border-t border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <Moon className="w-4 h-4 text-purple-600" />
+                    <span className="text-sm font-bold text-slate-800">Uyku Saati Kısıtlaması</span>
                   </div>
-                  <p className="text-xs text-slate-500">
-                    Bu saatler arasında çocuk ekranında uyku dinlenme modu gösterilir.
-                  </p>
-                  <div className="grid grid-cols-2 gap-3 pt-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-bold text-slate-600 mb-1">Başlangıç (Örn: 21:00)</label>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        Başlangıç Saati
+                      </label>
                       <input
                         type="time"
                         value={bedtimeStart}
                         onChange={(e) => setBedtimeStart(e.target.value)}
-                        className="w-full py-2 px-3 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        className="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs font-bold text-slate-700 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-slate-600 mb-1">Bitiş (Örn: 07:00)</label>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        Bitiş Saati
+                      </label>
                       <input
                         type="time"
                         value={bedtimeEnd}
                         onChange={(e) => setBedtimeEnd(e.target.value)}
-                        className="w-full py-2 px-3 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        className="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs font-bold text-slate-700 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                       />
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Allowed Categories */}
-              <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-800">İzin Verilen Kategoriler</h3>
-                    <p className="text-xs text-slate-500">
-                      Seçim yapılmazsa tüm kategorilere izin verilir. Seçilenler dışındakiler gizlenir.
-                    </p>
+                {/* Allowed Categories */}
+                <div className="space-y-3 pt-4 border-t border-slate-100">
+                  <span className="text-sm font-bold text-slate-800 block">
+                    İzin Verilen Kategoriler
+                  </span>
+                  <p className="text-xs text-slate-500">
+                    Hiçbir kategori seçilmezse tüm kategoriler varsayılan olarak serbesttir.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {DEFAULT_CATEGORIES.map((cat) => {
+                      const isAllowed = allowedCategories.includes(cat.id);
+                      return (
+                        <button
+                          type="button"
+                          key={cat.id}
+                          onClick={() => toggleCategory(cat.id)}
+                          className={`px-4 py-2 rounded-2xl border text-xs font-bold transition-all flex items-center gap-1.5 ${
+                            isAllowed
+                              ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          {isAllowed && <Check className="w-3.5 h-3.5" />}
+                          {cat.name}
+                        </button>
+                      );
+                    })}
                   </div>
-                  {allowedCategories.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setAllowedCategories([])}
-                      className="text-xs text-purple-600 font-bold hover:underline"
-                    >
-                      Tümüne İzin Ver
-                    </button>
-                  )}
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 pt-2">
-                  {DEFAULT_CATEGORIES.map((cat) => {
-                    const isChecked = allowedCategories.length === 0 || allowedCategories.includes(cat.id);
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => toggleCategory(cat.id)}
-                        className={`p-3 rounded-xl text-xs font-bold transition-all border flex items-center justify-between text-left ${
-                          isChecked
-                            ? 'bg-purple-50 text-purple-900 border-purple-200 shadow-xs'
-                            : 'bg-white text-slate-400 border-slate-200 opacity-60'
-                        }`}
-                      >
-                        <span className="truncate">{cat.title}</span>
-                        {isChecked && <Check className="w-3.5 h-3.5 text-purple-600 shrink-0" />}
-                      </button>
-                    );
-                  })}
+                <div className="pt-4 border-t border-slate-100 flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={isSavingSettings}
+                    className="px-6 py-3 bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white rounded-2xl text-xs font-black shadow-md transition-all disabled:opacity-50"
+                  >
+                    {isSavingSettings ? 'Kaydediliyor...' : 'Kısıtlamaları Kaydet'}
+                  </button>
                 </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isSavingSettings || isLoadingSettings}
-                className="px-6 py-3 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-md transition-all text-xs flex items-center gap-2"
-              >
-                {isSavingSettings ? 'Kaydediliyor...' : 'Ayarları Kaydet ve Uygula'}
-              </button>
-            </form>
+              </form>
+            )}
           </div>
         )}
 
-        {/* TAB 5: PIN MANAGEMENT */}
+        {/* TAB 6: PIN MANAGEMENT */}
         {activeTab === 'pin' && (
-          <div className="bg-white p-6 rounded-3xl border border-amber-100 shadow-sm max-w-xl space-y-4">
+          <div className="bg-white p-6 rounded-3xl border border-purple-100 shadow-sm max-w-xl space-y-6">
             <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-              <Key className="w-5 h-5 text-amber-600" />
-              Ebeveyn PIN Değiştirme
+              <Key className="w-5 h-5 text-purple-600" />
+              Ebeveyn PIN Kodu Yönetimi
             </h2>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Ebeveyn panelini, kısıtlamaları ve video yönetimini korumak için 4 haneli PIN kodunuzu güncelleyin.
+            </p>
 
             {pinMessage && (
               <div
-                className={`p-3 rounded-2xl text-xs font-semibold ${
+                className={`p-4 rounded-2xl text-xs font-bold flex items-center gap-2 ${
                   pinMessage.type === 'success'
                     ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                     : 'bg-rose-50 text-rose-800 border border-rose-200'
                 }`}
               >
+                {pinMessage.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                ) : (
+                  <Key className="w-4 h-4 text-rose-600" />
+                )}
                 {pinMessage.text}
               </div>
             )}
@@ -549,21 +579,23 @@ export const ParentPanelPage: React.FC = () => {
             <form onSubmit={handleUpdatePin} className="space-y-4">
               {hasExistingPin && (
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Mevcut 4 Haneli PIN</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Mevcut PIN Kodu (4 Hane)
+                  </label>
                   <input
                     type="password"
                     maxLength={4}
                     value={currentPin}
                     onChange={(e) => setCurrentPin(e.target.value.replace(/\D/g, ''))}
                     placeholder="••••"
-                    className="w-full text-center text-xl tracking-widest font-mono font-bold py-2.5 px-4 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-center tracking-widest text-lg font-black bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                   />
                 </div>
               )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  {hasExistingPin ? 'Yeni 4 Haneli PIN' : '4 Haneli Ebeveyn PIN Belirleyin'}
+                  Yeni PIN Kodu (4 Hane)
                 </label>
                 <input
                   type="password"
@@ -571,24 +603,26 @@ export const ParentPanelPage: React.FC = () => {
                   value={newPin}
                   onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ''))}
                   placeholder="••••"
-                  className="w-full text-center text-xl tracking-widest font-mono font-bold py-2.5 px-4 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-center tracking-widest text-lg font-black bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
               </div>
 
               <button
                 type="submit"
-                disabled={isUpdatingPin || newPin.length < 4 || (hasExistingPin && currentPin.length < 4)}
-                className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-md transition-all text-xs"
+                disabled={isUpdatingPin}
+                className="w-full py-3.5 bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white rounded-2xl text-xs font-black shadow-md transition-all disabled:opacity-50"
               >
-                {isUpdatingPin ? 'Güncelleniyor...' : hasExistingPin ? 'PIN\'i Güncelle' : 'PIN Oluştur'}
+                {isUpdatingPin ? 'Güncelleniyor...' : hasExistingPin ? 'PIN Kodunu Güncelle' : 'PIN Kodu Oluştur'}
               </button>
             </form>
           </div>
         )}
-      </div>
 
-      {/* Video Player Modal */}
-      <VideoPlayerModal video={activeVideo} onClose={() => setActiveVideo(null)} />
+        {/* Video Player Modal for history/favorites */}
+        {activeVideo && (
+          <VideoPlayerModal video={activeVideo} onClose={() => setActiveVideo(null)} />
+        )}
+      </div>
     </MainLayout>
   );
 };

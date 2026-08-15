@@ -40,6 +40,28 @@ export class VideoService {
     }
   }
 
+  async getMyVideos(): Promise<Video[]> {
+    if (!isSupabaseConfigured) return [];
+
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const currentUserId = userData?.user?.id;
+      if (!currentUserId) return [];
+
+      const { data, error } = await supabase
+        .from('videos')
+        .select('*')
+        .eq('owner_id', currentUserId)
+        .eq('is_deleted', false)
+        .order('created_at', { ascending: false });
+
+      if (error || !data) return [];
+      return data as Video[];
+    } catch {
+      return [];
+    }
+  }
+
   async getVideoById(id: string): Promise<Video | null> {
     if (!isSupabaseConfigured) return null;
 
@@ -58,66 +80,42 @@ export class VideoService {
     }
   }
 
-  async createVideo(ownerId: string, input: VideoCreateInput): Promise<ServiceOperationResult<Video>> {
+  /**
+   * Hardened Video Creation via Generic create_video RPC
+   * Client cannot pass owner_id, role, or internal timestamps.
+   */
+  async createVideo(input: VideoCreateInput): Promise<ServiceOperationResult<Video>> {
     if (!isSupabaseConfigured) {
       return { success: false, error: 'Database is not configured.', affectedRows: 0 };
     }
 
     try {
-      const payload = {
-        owner_id: ownerId,
-        title: input.title,
-        description: input.description || null,
-        category_id: input.category_id || null,
-        video_url: input.video_url,
-        thumbnail_url: input.thumbnail_url || null,
-        duration: input.duration || 0,
-        visibility: input.visibility || 'public',
-        is_deleted: false,
-      };
+      const { data, error } = await supabase.rpc('create_video', {
+        p_title: input.title,
+        p_description: input.description || '',
+        p_category_id: input.category_id || null,
+        p_video_url: input.video_url,
+        p_thumbnail_url: input.thumbnail_url || '',
+        p_duration: input.duration || 0,
+        p_visibility: input.visibility || 'public',
+      });
 
-      const { data, error } = await supabase.from('videos').insert(payload).select().single();
-
-      if (error || !data) {
-        return { success: false, error: error?.message || 'Video creation failed.', affectedRows: 0 };
+      if (error) {
+        return { success: false, error: error.message, affectedRows: 0 };
       }
 
-      return { success: true, data: data as Video, affectedRows: 1 };
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      return { success: false, error: errorMessage, affectedRows: 0 };
-    }
-  }
-
-  async updateVideo(id: string, input: VideoUpdateInput): Promise<ServiceOperationResult<Video>> {
-    if (!isSupabaseConfigured) {
-      return { success: false, error: 'Database is not configured.', affectedRows: 0 };
-    }
-
-    try {
-      const payload = {
-        ...input,
-        updated_at: new Date().toISOString(),
-      };
-
-      const { data, error, count } = await supabase
-        .from('videos')
-        .update(payload)
-        .eq('id', id)
-        .eq('is_deleted', false)
-        .select();
-
-      const affected = count ?? (data ? data.length : 0);
-
-      if (error || affected === 0 || !data || data.length === 0) {
-        return {
-          success: false,
-          error: error?.message || 'Update failed or video not found / already deleted.',
-          affectedRows: affected,
-        };
+      const res = data as { success: boolean; video_id?: string; error?: string };
+      if (!res.success || !res.video_id) {
+        return { success: false, error: res.error || 'Video creation failed.', affectedRows: 0 };
       }
 
-      return { success: true, data: data[0] as Video, affectedRows: affected };
+      // Fetch the created video record
+      const createdVideo = await this.getVideoById(res.video_id);
+      return {
+        success: true,
+        data: createdVideo || undefined,
+        affectedRows: 1,
+      };
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       return { success: false, error: errorMessage, affectedRows: 0 };
@@ -125,9 +123,50 @@ export class VideoService {
   }
 
   /**
-   * STRICT SOFT DELETE implementation
-   * Sets is_deleted = true and updated_at = now()
-   * Verifies response error AND affected rows.
+   * Hardened Video Update via Generic update_video RPC
+   * Server strictly enforces ownership or admin role.
+   */
+  async updateVideo(id: string, input: VideoUpdateInput): Promise<ServiceOperationResult<Video>> {
+    if (!isSupabaseConfigured) {
+      return { success: false, error: 'Database is not configured.', affectedRows: 0 };
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('update_video', {
+        p_video_id: id,
+        p_title: input.title !== undefined ? input.title : null,
+        p_description: input.description !== undefined ? input.description : null,
+        p_category_id: input.category_id !== undefined ? input.category_id : null,
+        p_video_url: input.video_url !== undefined ? input.video_url : null,
+        p_thumbnail_url: input.thumbnail_url !== undefined ? input.thumbnail_url : null,
+        p_duration: input.duration !== undefined ? input.duration : null,
+        p_visibility: input.visibility !== undefined ? input.visibility : null,
+      });
+
+      if (error) {
+        return { success: false, error: error.message, affectedRows: 0 };
+      }
+
+      const res = data as { success: boolean; error?: string };
+      if (!res.success) {
+        return { success: false, error: res.error || 'Video update failed.', affectedRows: 0 };
+      }
+
+      const updatedVideo = await this.getVideoById(id);
+      return {
+        success: true,
+        data: updatedVideo || undefined,
+        affectedRows: 1,
+      };
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      return { success: false, error: errorMessage, affectedRows: 0 };
+    }
+  }
+
+  /**
+   * STRICT SOFT DELETE via Generic soft_delete_video RPC
+   * Physical DELETE is disabled at database level.
    */
   async softDeleteVideo(id: string): Promise<ServiceOperationResult> {
     if (!isSupabaseConfigured) {
@@ -135,32 +174,20 @@ export class VideoService {
     }
 
     try {
-      const { data, error, count } = await supabase
-        .from('videos')
-        .update({
-          is_deleted: true,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', id)
-        .eq('is_deleted', false)
-        .select();
+      const { data, error } = await supabase.rpc('soft_delete_video', {
+        p_video_id: id,
+      });
 
-      const affected = count ?? (data ? data.length : 0);
-
-      // Strict validation: Must not have error AND affected rows must be > 0
       if (error) {
         return { success: false, error: error.message, affectedRows: 0 };
       }
 
-      if (affected === 0 || !data || data.length === 0) {
-        return {
-          success: false,
-          error: 'Process failed: Target video was not updated (either missing or already deleted).',
-          affectedRows: 0,
-        };
+      const res = data as { success: boolean; error?: string };
+      if (!res.success) {
+        return { success: false, error: res.error || 'Video deletion failed.', affectedRows: 0 };
       }
 
-      return { success: true, affectedRows: affected };
+      return { success: true, affectedRows: 1 };
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       return { success: false, error: errorMessage, affectedRows: 0 };
