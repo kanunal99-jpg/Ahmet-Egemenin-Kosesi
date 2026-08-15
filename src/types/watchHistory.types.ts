@@ -19,6 +19,12 @@ export interface WatchSessionStartResult {
   reused?: boolean;
 }
 
+export interface HeartbeatSessionResponse {
+  success: boolean;
+  watched_seconds?: number;
+  error?: string;
+}
+
 export interface WatchHistorySession {
   id: string;
   user_id: string;

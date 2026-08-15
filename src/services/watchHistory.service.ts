@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabase.client';
-import { WatchHistory, WatchProgressInput, WatchSessionStartResult, ServiceOperationResult } from '../types';
+import { WatchHistory, WatchProgressInput, WatchSessionStartResult, HeartbeatSessionResponse, ServiceOperationResult } from '../types';
 
 export class WatchHistoryService {
   async getUserHistory(userId: string): Promise<WatchHistory[]> {
@@ -68,6 +68,35 @@ export class WatchHistoryService {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error starting session';
       return { success: false, allowed: false, error: msg };
+    }
+  }
+
+  /**
+   * Sends heartbeat for active watch session to record verified playing duration (CRIT-43)
+   */
+  async heartbeatSession(sessionId: string): Promise<HeartbeatSessionResponse> {
+    if (!isSupabaseConfigured || !sessionId) {
+      return { success: false, error: 'Database unconfigured or session missing' };
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('heartbeat_watch_session', {
+        p_session_id: sessionId,
+      });
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
+      const res = data as { success?: boolean; watched_seconds?: number; error?: string };
+      return {
+        success: Boolean(res?.success),
+        watched_seconds: res?.watched_seconds,
+        error: res?.error,
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error during session heartbeat';
+      return { success: false, error: msg };
     }
   }
 

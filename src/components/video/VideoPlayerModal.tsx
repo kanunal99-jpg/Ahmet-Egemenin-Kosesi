@@ -28,12 +28,14 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
   const iframeContainerRef = useRef<HTMLDivElement>(null);
   const activeIntervalRef = useRef<number | null>(null);
   
-  // Watch session & tracking refs (CRIT-08)
+  // Watch session & tracking refs (CRIT-08 & CRIT-43)
   const activeSessionIdRef = useRef<string | null>(null);
   const hasIncrementedView = useRef<boolean>(false);
   const activePlayTimeSecondsRef = useRef<number>(0);
   const maxWatchedTimeSecondsRef = useRef<number>(0);
   const isCompletedRef = useRef<boolean>(false);
+  const heartbeatIntervalRef = useRef<number | null>(null);
+  const isFinalizedRef = useRef<boolean>(false);
 
   // Fail-Closed Authorization state (CRIT-07, CRIT-16)
   const [authState, setAuthState] = useState<AuthState>('checking');
@@ -87,6 +89,24 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
     maxWatchedTimeSecondsRef.current = 0;
     isCompletedRef.current = false;
     activeSessionIdRef.current = null;
+    isFinalizedRef.current = false;
+
+    const startHeartbeat = () => {
+      if (heartbeatIntervalRef.current !== null) return;
+      heartbeatIntervalRef.current = window.setInterval(() => {
+        const sid = activeSessionIdRef.current;
+        if (sid && !isFinalizedRef.current && isMounted) {
+          watchHistoryService.heartbeatSession(sid);
+        }
+      }, 6000);
+    };
+
+    const stopHeartbeat = () => {
+      if (heartbeatIntervalRef.current !== null) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
+    };
 
     const startPlayingTimer = () => {
       if (activeIntervalRef.current !== null) return;
@@ -99,6 +119,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
           }
         }
       }, 1000);
+      startHeartbeat();
     };
 
     const stopPlayingTimer = () => {
@@ -106,6 +127,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
         clearInterval(activeIntervalRef.current);
         activeIntervalRef.current = null;
       }
+      stopHeartbeat();
     };
 
     const handleStateChange = (event: any) => {
@@ -212,9 +234,10 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
     return () => {
       isMounted = false;
       stopPlayingTimer();
+      stopHeartbeat();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
 
-      // Finalize watch session and save progress on close
+      // Finalize watch session and save progress on close (CRIT-08, CRIT-40 & CRIT-43)
       const sessionId = activeSessionIdRef.current;
       const watchedSecs = activePlayTimeSecondsRef.current;
       let finalProgress = maxWatchedTimeSecondsRef.current;
@@ -239,12 +262,13 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
         (totalDuration > 0 && finalProgress / totalDuration >= 0.9) ||
         (totalDuration > 0 && watchedSecs / totalDuration >= 0.9);
 
-      // Finalize DB session (CRIT-08)
-      if (sessionId && watchedSecs > 0) {
+      // Finalize DB session with single-execution guard (CRIT-08 & CRIT-43)
+      if (sessionId && !isFinalizedRef.current) {
+        isFinalizedRef.current = true;
         watchHistoryService.finalizeSession(sessionId, watchedSecs, isCompleted);
       }
 
-      // Upsert current progress in watch_history
+      // Upsert current progress in watch_history (CRIT-40: saves playback position, not session duration)
       if (user?.id && (finalProgress > 1 || watchedSecs > 1)) {
         watchHistoryService.saveProgress(user.id, {
           video_id: video.id,

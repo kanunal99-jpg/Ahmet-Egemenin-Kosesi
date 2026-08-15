@@ -92,11 +92,15 @@ CREATE TABLE IF NOT EXISTS public.watch_history_sessions (
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   video_id UUID NOT NULL REFERENCES public.videos(id) ON DELETE CASCADE,
   started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_heartbeat_at TIMESTAMPTZ DEFAULT NOW(),
   ended_at TIMESTAMPTZ,
   watched_seconds INTEGER NOT NULL DEFAULT 0 CHECK (watched_seconds >= 0),
   completed BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Idempotent column addition for existing tables
+ALTER TABLE public.watch_history_sessions ADD COLUMN IF NOT EXISTS last_heartbeat_at TIMESTAMPTZ DEFAULT NOW();
 
 -- Idempotent Constraints for watch_history_sessions
 DO $$
@@ -201,11 +205,10 @@ REVOKE EXECUTE ON FUNCTION public.get_istanbul_day_start() FROM PUBLIC, anon, au
 
 
 -- ============================================================================
--- 5. CRIT-19, CRIT-21, CRIT-38 & CRIT-39: EFFECTIVE CHILD DAILY WATCH CALCULATION
--- Calculates finalized watch sessions + active (unfinalized) session elapsed time,
--- with clock-skew protection (GREATEST(0,...)), sanity cap (LEAST(43200,...)),
--- canonical Europe/Istanbul day-start, and midnight-overlap handling for BOTH
--- finalized and active sessions.
+-- 5. CRIT-19, CRIT-21, CRIT-38, CRIT-39, CRIT-42 & CRIT-43: EFFECTIVE CHILD DAILY WATCH CALCULATION
+-- Calculates daily watch duration using canonical session overlap for both finalized
+-- and active (heartbeat-tracked) sessions.
+-- No arbitrary 12-hour filter; uses true verified watched_seconds accumulated via heartbeats.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.get_effective_child_daily_watch_seconds(
   p_user_id UUID
@@ -217,8 +220,7 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_today_start TIMESTAMPTZ;
-  v_finalized_seconds BIGINT := 0;
-  v_active_seconds BIGINT := 0;
+  v_total_seconds BIGINT := 0;
 BEGIN
   IF p_user_id IS NULL THEN
     RETURN 0;
@@ -227,10 +229,11 @@ BEGIN
   -- Canonical Europe/Istanbul day start
   v_today_start := public.get_istanbul_day_start();
 
-  -- 1. Sum of finalized sessions intersecting today (CRIT-38 & CRIT-39):
-  --    Canonical overlap: overlap_start = GREATEST(started_at, v_today_start),
-  --    overlap_end = LEAST(ended_at, NOW()).
-  --    Session contribution: LEAST(watched_seconds, overlap_seconds, 43200).
+  -- Canonical session overlap for both finalized and active sessions (CRIT-39, CRIT-42 & CRIT-43):
+  -- overlap_start = GREATEST(started_at, v_today_start)
+  -- overlap_end   = LEAST(COALESCE(ended_at, NOW()), NOW())
+  -- overlap_secs  = GREATEST(0, EXTRACT(EPOCH FROM overlap_end - overlap_start))
+  -- contribution  = LEAST(watched_seconds, overlap_secs, 43200)
   SELECT COALESCE(
     SUM(
       LEAST(
@@ -239,7 +242,7 @@ BEGIN
           0,
           EXTRACT(
             EPOCH FROM (
-              LEAST(ended_at, NOW()) - GREATEST(started_at, v_today_start)
+              LEAST(COALESCE(ended_at, NOW()), NOW()) - GREATEST(started_at, v_today_start)
             )
           )::BIGINT
         ),
@@ -247,42 +250,13 @@ BEGIN
       )
     ),
     0
-  ) INTO v_finalized_seconds
+  ) INTO v_total_seconds
   FROM public.watch_history_sessions
   WHERE user_id = p_user_id
-    AND ended_at IS NOT NULL
-    AND ended_at >= v_today_start
+    AND COALESCE(ended_at, NOW()) >= v_today_start
     AND started_at <= NOW();
 
-  -- 2. Sum of active (unfinalized) sessions (CRIT-19, CRIT-21 & CRIT-39):
-  --    If an active session started before midnight, only count duration elapsed
-  --    since v_today_start towards today's limit.
-  SELECT COALESCE(
-    SUM(
-      GREATEST(
-        0,
-        LEAST(
-          43200,
-          EXTRACT(
-            EPOCH FROM (
-              NOW() - GREATEST(started_at, v_today_start)
-            )
-          )::BIGINT
-        )
-      )
-    ),
-    0
-  ) INTO v_active_seconds
-  FROM public.watch_history_sessions
-  WHERE user_id = p_user_id
-    AND ended_at IS NULL
-    AND started_at <= NOW()
-    AND (
-      started_at >= v_today_start
-      OR (started_at < v_today_start AND (NOW() - started_at) <= INTERVAL '12 hours')
-    );
-
-  RETURN v_finalized_seconds + v_active_seconds;
+  RETURN v_total_seconds;
 END;
 $$;
 
@@ -550,7 +524,74 @@ GRANT EXECUTE ON FUNCTION public.start_watch_session(UUID) TO authenticated;
 
 
 -- ============================================================================
--- 9. RPC: finalize_watch_session (CRIT-08, CRIT-19, CRIT-36 & CRIT-40)
+-- 9. RPC: heartbeat_watch_session (CRIT-43)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.heartbeat_watch_session(
+  p_session_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_user_id UUID := auth.uid();
+  v_session RECORD;
+  v_now TIMESTAMPTZ := NOW();
+  v_delta_seconds BIGINT;
+  v_new_watched_seconds INT;
+BEGIN
+  IF v_user_id IS NULL THEN
+    RETURN jsonb_build_object('success', FALSE, 'error', 'Kimlik doğrulaması yapılmadı.');
+  END IF;
+
+  IF p_session_id IS NULL THEN
+    RETURN jsonb_build_object('success', FALSE, 'error', 'Geçersiz oturum kimliği.');
+  END IF;
+
+  -- Verify session belongs to caller and is active (FOR UPDATE lock)
+  SELECT id, user_id, video_id, started_at, last_heartbeat_at, watched_seconds
+  INTO v_session
+  FROM public.watch_history_sessions
+  WHERE id = p_session_id AND user_id = v_user_id AND ended_at IS NULL
+  FOR UPDATE;
+
+  IF v_session.id IS NULL THEN
+    RETURN jsonb_build_object('success', FALSE, 'error', 'Oturum bulunamadı veya sonlandırılmış.');
+  END IF;
+
+  -- Calculate elapsed time since last heartbeat or session start
+  v_delta_seconds := GREATEST(
+    0,
+    EXTRACT(EPOCH FROM (v_now - COALESCE(v_session.last_heartbeat_at, v_session.started_at)))::BIGINT
+  );
+
+  -- Sanitize delta: client heartbeats are sent every 5-10 seconds; cap individual delta at 30 seconds
+  v_delta_seconds := LEAST(v_delta_seconds, 30);
+
+  v_new_watched_seconds := LEAST(
+    (v_session.watched_seconds + v_delta_seconds)::BIGINT,
+    43200::BIGINT
+  )::INT;
+
+  UPDATE public.watch_history_sessions
+  SET watched_seconds = v_new_watched_seconds,
+      last_heartbeat_at = v_now
+  WHERE id = p_session_id AND user_id = v_user_id;
+
+  RETURN jsonb_build_object(
+    'success', TRUE,
+    'watched_seconds', v_new_watched_seconds
+  );
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.heartbeat_watch_session(UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.heartbeat_watch_session(UUID) TO authenticated;
+
+
+-- ============================================================================
+-- 10. RPC: finalize_watch_session (CRIT-08, CRIT-19, CRIT-36, CRIT-40 & CRIT-43)
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.finalize_watch_session(
   p_session_id UUID,
@@ -566,9 +607,12 @@ DECLARE
   v_user_id UUID := auth.uid();
   v_video_id UUID;
   v_started_at TIMESTAMPTZ;
+  v_last_heartbeat_at TIMESTAMPTZ;
+  v_session_watched_seconds INT;
   v_duration INT;
   v_actual_elapsed_seconds BIGINT;
-  v_claimed_seconds BIGINT;
+  v_trailing_delta BIGINT;
+  v_accumulated_seconds BIGINT;
   v_sanitized_seconds INT;
   v_verified_completed BOOLEAN := FALSE;
 BEGIN
@@ -576,8 +620,9 @@ BEGIN
     RETURN jsonb_build_object('success', FALSE, 'error', 'Kimlik doğrulaması yapılmadı.');
   END IF;
 
-  -- 1. Verify session belongs to caller and is not already finalized (CRIT-08, CRIT-36 & CRIT-41)
-  SELECT video_id, started_at INTO v_video_id, v_started_at
+  -- 1. Verify session belongs to caller and is not already finalized (FOR UPDATE)
+  SELECT video_id, started_at, last_heartbeat_at, watched_seconds
+  INTO v_video_id, v_started_at, v_last_heartbeat_at, v_session_watched_seconds
   FROM public.watch_history_sessions
   WHERE id = p_session_id AND user_id = v_user_id AND ended_at IS NULL
   FOR UPDATE;
@@ -586,21 +631,30 @@ BEGIN
     RETURN jsonb_build_object('success', FALSE, 'error', 'Geçersiz veya daha önce sonlandırılmış oturum.');
   END IF;
 
-  -- 2. CRIT-36: Authoritative DB elapsed time calculation
+  -- 2. Authoritative DB elapsed time calculation
   IF v_started_at > NOW() THEN
     v_actual_elapsed_seconds := 0;
   ELSE
     v_actual_elapsed_seconds := GREATEST(0, EXTRACT(EPOCH FROM (NOW() - v_started_at))::BIGINT);
   END IF;
 
-  v_claimed_seconds := GREATEST(0, COALESCE(p_watched_seconds, 0)::BIGINT);
+  -- Trailing delta between last heartbeat and finalize (max 15s)
+  v_trailing_delta := LEAST(
+    GREATEST(0, EXTRACT(EPOCH FROM (NOW() - COALESCE(v_last_heartbeat_at, v_started_at)))::BIGINT),
+    15
+  );
 
-  -- 3. CRIT-36: Sanitize watched seconds against actual elapsed time, claimed time, and duration
+  v_accumulated_seconds := GREATEST(
+    v_session_watched_seconds + v_trailing_delta,
+    COALESCE(p_watched_seconds, 0)::BIGINT
+  );
+
+  -- 3. Sanitize watched seconds against actual elapsed time, client claim, and video duration
   SELECT duration INTO v_duration FROM public.videos WHERE id = v_video_id;
 
   IF v_duration IS NOT NULL AND v_duration > 0 THEN
     v_sanitized_seconds := LEAST(
-      v_claimed_seconds,
+      v_accumulated_seconds,
       v_actual_elapsed_seconds,
       v_duration::BIGINT,
       43200::BIGINT
@@ -614,12 +668,11 @@ BEGIN
     END IF;
   ELSE
     v_sanitized_seconds := LEAST(
-      v_claimed_seconds,
+      v_accumulated_seconds,
       v_actual_elapsed_seconds,
       43200::BIGINT
     )::INT;
 
-    -- Fallback completion integrity when duration is unknown/0
     v_verified_completed := COALESCE(p_completed, FALSE) AND (v_sanitized_seconds > 0);
   END IF;
 
@@ -631,7 +684,6 @@ BEGIN
   WHERE id = p_session_id AND user_id = v_user_id;
 
   -- 5. CRIT-40: Update cumulative completion state in watch_history WITHOUT overwriting progress_seconds
-  -- (watch_history.progress_seconds represents playback position saved by saveProgress, not session duration)
   INSERT INTO public.watch_history (user_id, video_id, progress_seconds, completed, updated_at)
   VALUES (v_user_id, v_video_id, 0, v_verified_completed, NOW())
   ON CONFLICT (user_id, video_id)
@@ -831,7 +883,7 @@ BEGIN
       v_start_time := NOW() - INTERVAL '7 days';
   END CASE;
 
-  -- 1. Canonical session overlap totals (CRIT-39):
+  -- 1. Canonical session overlap totals (CRIT-39 & CRIT-42):
   -- Ensures totalWatchTimeSeconds, categoryStats, and topWatchedVideos use the EXACT same
   -- period overlap calculation (e.g. midnight overlap for daily period: 23:59:30 -> 00:05:00 gets 300s).
   WITH period_sessions AS (
@@ -846,7 +898,7 @@ BEGIN
           0,
           EXTRACT(
             EPOCH FROM (
-              LEAST(s.ended_at, NOW()) - GREATEST(s.started_at, v_start_time)
+              LEAST(COALESCE(s.ended_at, NOW()), NOW()) - GREATEST(s.started_at, v_start_time)
             )
           )::BIGINT
         ),
@@ -855,8 +907,7 @@ BEGIN
     FROM public.watch_history_sessions s
     JOIN public.videos v ON v.id = s.video_id
     WHERE s.user_id = p_child_id
-      AND s.ended_at IS NOT NULL
-      AND s.ended_at >= v_start_time
+      AND COALESCE(s.ended_at, NOW()) >= v_start_time
       AND s.started_at <= NOW()
       AND v.is_deleted = FALSE
   )
@@ -870,7 +921,7 @@ BEGIN
     v_completed_videos_count
   FROM period_sessions;
 
-  -- 2. Category distribution (CRIT-22 & CRIT-39: Canonical overlap & correct category columns)
+  -- 2. Category distribution (CRIT-22, CRIT-39 & CRIT-42: Canonical overlap & correct category columns)
   WITH period_sessions AS (
     SELECT
       s.id AS session_id,
@@ -883,7 +934,7 @@ BEGIN
           0,
           EXTRACT(
             EPOCH FROM (
-              LEAST(s.ended_at, NOW()) - GREATEST(s.started_at, v_start_time)
+              LEAST(COALESCE(s.ended_at, NOW()), NOW()) - GREATEST(s.started_at, v_start_time)
             )
           )::BIGINT
         ),
@@ -892,8 +943,7 @@ BEGIN
     FROM public.watch_history_sessions s
     JOIN public.videos v ON v.id = s.video_id
     WHERE s.user_id = p_child_id
-      AND s.ended_at IS NOT NULL
-      AND s.ended_at >= v_start_time
+      AND COALESCE(s.ended_at, NOW()) >= v_start_time
       AND s.started_at <= NOW()
       AND v.is_deleted = FALSE
   )
@@ -925,7 +975,7 @@ BEGIN
   ) cat_sum
   JOIN public.categories c ON c.id = cat_sum.category_id;
 
-  -- 3. Top watched videos in period (CRIT-39: Canonical overlap contribution)
+  -- 3. Top watched videos in period (CRIT-39 & CRIT-42: Canonical overlap contribution)
   WITH period_sessions AS (
     SELECT
       s.id AS session_id,
@@ -938,7 +988,7 @@ BEGIN
           0,
           EXTRACT(
             EPOCH FROM (
-              LEAST(s.ended_at, NOW()) - GREATEST(s.started_at, v_start_time)
+              LEAST(COALESCE(s.ended_at, NOW()), NOW()) - GREATEST(s.started_at, v_start_time)
             )
           )::BIGINT
         ),
@@ -947,8 +997,7 @@ BEGIN
     FROM public.watch_history_sessions s
     JOIN public.videos v ON v.id = s.video_id
     WHERE s.user_id = p_child_id
-      AND s.ended_at IS NOT NULL
-      AND s.ended_at >= v_start_time
+      AND COALESCE(s.ended_at, NOW()) >= v_start_time
       AND s.started_at <= NOW()
       AND v.is_deleted = FALSE
   )
