@@ -61,6 +61,10 @@ CREATE INDEX IF NOT EXISTS idx_parent_children_child_id ON public.parent_childre
 -- Enable RLS
 ALTER TABLE public.parent_children ENABLE ROW LEVEL SECURITY;
 
+-- CRIT-37: Explicit table-level privilege revocation & restricted SELECT grant
+REVOKE ALL ON public.parent_children FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON public.parent_children TO authenticated;
+
 -- Idempotent RLS Policies on parent_children
 DROP POLICY IF EXISTS "parent_children_select_parent" ON public.parent_children;
 CREATE POLICY "parent_children_select_parent"
@@ -81,11 +85,8 @@ CREATE POLICY "parent_children_admin_all"
     )
   );
 
--- Revoke direct mutation grants on parent_children (must use RPCs)
-REVOKE INSERT, UPDATE, DELETE ON public.parent_children FROM PUBLIC, anon, authenticated;
 
-
--- 2.2 Table: watch_history_sessions (CRIT-08, CRIT-18, CRIT-19)
+-- 2.2 Table: watch_history_sessions (CRIT-08, CRIT-18, CRIT-19, CRIT-37)
 CREATE TABLE IF NOT EXISTS public.watch_history_sessions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -120,6 +121,10 @@ CREATE INDEX IF NOT EXISTS idx_wh_sessions_user_active ON public.watch_history_s
 -- Enable RLS
 ALTER TABLE public.watch_history_sessions ENABLE ROW LEVEL SECURITY;
 
+-- CRIT-37: Explicit table-level privilege revocation & restricted SELECT grant
+REVOKE ALL ON public.watch_history_sessions FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON public.watch_history_sessions TO authenticated;
+
 -- Idempotent RLS Policies on watch_history_sessions
 DROP POLICY IF EXISTS "watch_history_sessions_select_own" ON public.watch_history_sessions;
 CREATE POLICY "watch_history_sessions_select_own"
@@ -134,9 +139,6 @@ CREATE POLICY "watch_history_sessions_admin_select"
       SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin'
     )
   );
-
--- Revoke direct mutation grants on watch_history_sessions (must use RPCs)
-REVOKE INSERT, UPDATE, DELETE ON public.watch_history_sessions FROM PUBLIC, anon, authenticated;
 
 
 -- ============================================================================
@@ -199,10 +201,11 @@ REVOKE EXECUTE ON FUNCTION public.get_istanbul_day_start() FROM PUBLIC, anon, au
 
 
 -- ============================================================================
--- 5. CRIT-19 & CRIT-21: EFFECTIVE CHILD DAILY WATCH CALCULATION
+-- 5. CRIT-19, CRIT-21 & CRIT-38: EFFECTIVE CHILD DAILY WATCH CALCULATION
 -- Calculates finalized watch sessions + active (unfinalized) session elapsed time,
 -- with clock-skew protection (GREATEST(0,...)), sanity cap (LEAST(43200,...)),
--- canonical Europe/Istanbul day-start, and midnight-overlap handling.
+-- canonical Europe/Istanbul day-start, and midnight-overlap handling for BOTH
+-- finalized and active sessions.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.get_effective_child_daily_watch_seconds(
   p_user_id UUID
@@ -224,14 +227,36 @@ BEGIN
   -- Canonical Europe/Istanbul day start
   v_today_start := public.get_istanbul_day_start();
 
-  -- 1. Sum of finalized sessions started today
-  SELECT COALESCE(SUM(watched_seconds), 0) INTO v_finalized_seconds
+  -- 1. Sum of finalized sessions intersecting today (CRIT-38):
+  --    Accounts for sessions that crossed midnight (e.g. started 23:59 yesterday, ended 00:05 today).
+  --    Pro-rates or limits duration to the portion elapsed since v_today_start.
+  SELECT COALESCE(
+    SUM(
+      LEAST(
+        watched_seconds,
+        GREATEST(
+          0,
+          LEAST(
+            43200,
+            EXTRACT(
+              EPOCH FROM (
+                LEAST(ended_at, NOW()) - GREATEST(started_at, v_today_start)
+              )
+            )::BIGINT
+          )
+        )
+      )
+    ),
+    0
+  ) INTO v_finalized_seconds
   FROM public.watch_history_sessions
   WHERE user_id = p_user_id
-    AND started_at >= v_today_start
-    AND ended_at IS NOT NULL;
+    AND ended_at IS NOT NULL
+    AND ended_at >= v_today_start
+    AND started_at <= NOW()
+    AND started_at >= v_today_start - INTERVAL '12 hours';
 
-  -- 2. Sum of active (unfinalized) sessions:
+  -- 2. Sum of active (unfinalized) sessions (CRIT-19 & CRIT-21):
   --    If an active session started before midnight (e.g. 23:59), only count
   --    the duration elapsed SINCE v_today_start (midnight) towards today's limit.
   SELECT COALESCE(
@@ -267,7 +292,7 @@ REVOKE EXECUTE ON FUNCTION public.get_effective_child_daily_watch_seconds(UUID) 
 
 
 -- ============================================================================
--- 6. CRIT-18, CRIT-19, CRIT-20: INTERNAL POLICY HELPER
+-- 6. CRIT-18, CRIT-19, CRIT-20, CRIT-35: INTERNAL POLICY HELPER
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.check_child_video_play_policy(
   p_user_id UUID,
@@ -286,7 +311,7 @@ DECLARE
   v_now_time_str TEXT;
   v_effective_watched_seconds BIGINT := 0;
 BEGIN
-  -- 1. Check video existence
+  -- 1. Check video existence and visibility (CRIT-35)
   IF p_video_id IS NULL THEN
     RETURN jsonb_build_object(
       'allowed', FALSE,
@@ -295,7 +320,7 @@ BEGIN
     );
   END IF;
 
-  SELECT id, title, category_id, is_deleted INTO v_video
+  SELECT id, title, category_id, is_deleted, visibility INTO v_video
   FROM public.videos
   WHERE id = p_video_id;
 
@@ -315,9 +340,18 @@ BEGIN
     );
   END IF;
 
-  -- If guest (unauthenticated), allow public video viewing
+  -- CRIT-35: Visibility enforcement BEFORE role checks
+  -- For guests (anon): ONLY public non-deleted videos are allowed
   IF p_user_id IS NULL THEN
-    RETURN jsonb_build_object('allowed', TRUE, 'reason', 'OK');
+    IF v_video.visibility = 'public' THEN
+      RETURN jsonb_build_object('allowed', TRUE, 'reason', 'OK');
+    ELSE
+      RETURN jsonb_build_object(
+        'allowed', FALSE,
+        'reason', 'VIDEO_NOT_PUBLIC',
+        'message', 'Bu videoya erişim izniniz bulunmuyor.'
+      );
+    END IF;
   END IF;
 
   -- 2. Check user role
@@ -331,16 +365,32 @@ BEGIN
     );
   END IF;
 
-  -- Parents and Admins have unrestricted playback access on active videos
+  -- CRIT-35: Enforce visibility rules by role
+  -- Parents and Admins have platform supervision playback access
   IF v_user_role IN ('parent', 'admin') THEN
     RETURN jsonb_build_object('allowed', TRUE, 'reason', 'OK');
   END IF;
 
-  -- CRIT-20: Publisher Role Playback Policy Specification
-  -- Publishers are content creators who can watch active public videos for preview/quality.
-  -- They do NOT have child parental restrictions, nor can they bypass parental rules on children.
+  -- CRIT-20 & CRIT-35: Publishers can only view public active videos (cannot bypass private/unlisted)
   IF v_user_role = 'publisher' THEN
-    RETURN jsonb_build_object('allowed', TRUE, 'reason', 'OK');
+    IF v_video.visibility = 'public' THEN
+      RETURN jsonb_build_object('allowed', TRUE, 'reason', 'OK');
+    ELSE
+      RETURN jsonb_build_object(
+        'allowed', FALSE,
+        'reason', 'VIDEO_NOT_PUBLIC',
+        'message', 'Yayıncılar yalnızca herkese açık videoları izleyebilir.'
+      );
+    END IF;
+  END IF;
+
+  -- Child role: MUST be public video. Private/unlisted is strictly denied.
+  IF v_video.visibility != 'public' THEN
+    RETURN jsonb_build_object(
+      'allowed', FALSE,
+      'reason', 'VIDEO_NOT_PUBLIC',
+      'message', 'Bu video çocuk hesapları için erişime açık değildir.'
+    );
   END IF;
 
   -- 3. Child Role: Locate parental settings
@@ -519,7 +569,7 @@ GRANT EXECUTE ON FUNCTION public.start_watch_session(UUID) TO authenticated;
 
 
 -- ============================================================================
--- 9. RPC: finalize_watch_session (CRIT-08 & CRIT-19)
+-- 9. RPC: finalize_watch_session (CRIT-08, CRIT-19 & CRIT-36)
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.finalize_watch_session(
   p_session_id UUID,
@@ -534,15 +584,19 @@ AS $$
 DECLARE
   v_user_id UUID := auth.uid();
   v_video_id UUID;
+  v_started_at TIMESTAMPTZ;
   v_duration INT;
-  v_sanitized_seconds INT := GREATEST(0, COALESCE(p_watched_seconds, 0));
+  v_actual_elapsed_seconds BIGINT;
+  v_claimed_seconds BIGINT;
+  v_sanitized_seconds INT;
+  v_verified_completed BOOLEAN := FALSE;
 BEGIN
   IF v_user_id IS NULL THEN
     RETURN jsonb_build_object('success', FALSE, 'error', 'Kimlik doğrulaması yapılmadı.');
   END IF;
 
-  -- Verify session belongs to caller and is not already finalized
-  SELECT video_id INTO v_video_id
+  -- 1. Verify session belongs to caller and is not already finalized (CRIT-08 & CRIT-36)
+  SELECT video_id, started_at INTO v_video_id, v_started_at
   FROM public.watch_history_sessions
   WHERE id = p_session_id AND user_id = v_user_id AND ended_at IS NULL
   FOR UPDATE;
@@ -551,24 +605,53 @@ BEGIN
     RETURN jsonb_build_object('success', FALSE, 'error', 'Geçersiz veya daha önce sonlandırılmış oturum.');
   END IF;
 
-  -- Sanitize watched seconds against video duration (allow max 2x duration or 12 hours)
-  SELECT duration INTO v_duration FROM public.videos WHERE id = v_video_id;
-  IF v_duration IS NOT NULL AND v_duration > 0 THEN
-    v_sanitized_seconds := LEAST(v_sanitized_seconds, v_duration * 2);
+  -- 2. CRIT-36: Authoritative DB elapsed time calculation
+  IF v_started_at > NOW() THEN
+    v_actual_elapsed_seconds := 0;
   ELSE
-    v_sanitized_seconds := LEAST(v_sanitized_seconds, 43200); -- max 12 hours
+    v_actual_elapsed_seconds := GREATEST(0, EXTRACT(EPOCH FROM (NOW() - v_started_at))::BIGINT);
   END IF;
 
-  -- Finalize session
+  v_claimed_seconds := GREATEST(0, COALESCE(p_watched_seconds, 0)::BIGINT);
+
+  -- 3. CRIT-36: Sanitize watched seconds against actual elapsed time, claimed time, and duration
+  SELECT duration INTO v_duration FROM public.videos WHERE id = v_video_id;
+
+  IF v_duration IS NOT NULL AND v_duration > 0 THEN
+    v_sanitized_seconds := LEAST(
+      v_claimed_seconds,
+      v_actual_elapsed_seconds,
+      v_duration::BIGINT,
+      43200::BIGINT
+    )::INT;
+
+    -- Completion integrity: completed requires client claim AND at least 90% watched
+    IF p_completed IS TRUE AND v_sanitized_seconds >= (v_duration * 0.9) THEN
+      v_verified_completed := TRUE;
+    ELSE
+      v_verified_completed := FALSE;
+    END IF;
+  ELSE
+    v_sanitized_seconds := LEAST(
+      v_claimed_seconds,
+      v_actual_elapsed_seconds,
+      43200::BIGINT
+    )::INT;
+
+    -- Fallback completion integrity when duration is unknown/0
+    v_verified_completed := COALESCE(p_completed, FALSE) AND (v_sanitized_seconds > 0);
+  END IF;
+
+  -- 4. Finalize session atomically
   UPDATE public.watch_history_sessions
   SET ended_at = NOW(),
       watched_seconds = v_sanitized_seconds,
-      completed = COALESCE(p_completed, FALSE)
+      completed = v_verified_completed
   WHERE id = p_session_id AND user_id = v_user_id;
 
-  -- Upsert cumulative progress state in watch_history
+  -- 5. Upsert cumulative progress state in watch_history
   INSERT INTO public.watch_history (user_id, video_id, progress_seconds, completed, updated_at)
-  VALUES (v_user_id, v_video_id, v_sanitized_seconds, COALESCE(p_completed, FALSE), NOW())
+  VALUES (v_user_id, v_video_id, v_sanitized_seconds, v_verified_completed, NOW())
   ON CONFLICT (user_id, video_id)
   DO UPDATE SET
     progress_seconds = EXCLUDED.progress_seconds,
