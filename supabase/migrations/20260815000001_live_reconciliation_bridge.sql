@@ -201,7 +201,7 @@ REVOKE EXECUTE ON FUNCTION public.get_istanbul_day_start() FROM PUBLIC, anon, au
 
 
 -- ============================================================================
--- 5. CRIT-19, CRIT-21 & CRIT-38: EFFECTIVE CHILD DAILY WATCH CALCULATION
+-- 5. CRIT-19, CRIT-21, CRIT-38 & CRIT-39: EFFECTIVE CHILD DAILY WATCH CALCULATION
 -- Calculates finalized watch sessions + active (unfinalized) session elapsed time,
 -- with clock-skew protection (GREATEST(0,...)), sanity cap (LEAST(43200,...)),
 -- canonical Europe/Istanbul day-start, and midnight-overlap handling for BOTH
@@ -227,24 +227,23 @@ BEGIN
   -- Canonical Europe/Istanbul day start
   v_today_start := public.get_istanbul_day_start();
 
-  -- 1. Sum of finalized sessions intersecting today (CRIT-38):
-  --    Accounts for sessions that crossed midnight (e.g. started 23:59 yesterday, ended 00:05 today).
-  --    Pro-rates or limits duration to the portion elapsed since v_today_start.
+  -- 1. Sum of finalized sessions intersecting today (CRIT-38 & CRIT-39):
+  --    Canonical overlap: overlap_start = GREATEST(started_at, v_today_start),
+  --    overlap_end = LEAST(ended_at, NOW()).
+  --    Session contribution: LEAST(watched_seconds, overlap_seconds, 43200).
   SELECT COALESCE(
     SUM(
       LEAST(
         watched_seconds,
         GREATEST(
           0,
-          LEAST(
-            43200,
-            EXTRACT(
-              EPOCH FROM (
-                LEAST(ended_at, NOW()) - GREATEST(started_at, v_today_start)
-              )
-            )::BIGINT
-          )
-        )
+          EXTRACT(
+            EPOCH FROM (
+              LEAST(ended_at, NOW()) - GREATEST(started_at, v_today_start)
+            )
+          )::BIGINT
+        ),
+        43200
       )
     ),
     0
@@ -253,12 +252,11 @@ BEGIN
   WHERE user_id = p_user_id
     AND ended_at IS NOT NULL
     AND ended_at >= v_today_start
-    AND started_at <= NOW()
-    AND started_at >= v_today_start - INTERVAL '12 hours';
+    AND started_at <= NOW();
 
-  -- 2. Sum of active (unfinalized) sessions (CRIT-19 & CRIT-21):
-  --    If an active session started before midnight (e.g. 23:59), only count
-  --    the duration elapsed SINCE v_today_start (midnight) towards today's limit.
+  -- 2. Sum of active (unfinalized) sessions (CRIT-19, CRIT-21 & CRIT-39):
+  --    If an active session started before midnight, only count duration elapsed
+  --    since v_today_start towards today's limit.
   SELECT COALESCE(
     SUM(
       GREATEST(
@@ -281,7 +279,7 @@ BEGIN
     AND started_at <= NOW()
     AND (
       started_at >= v_today_start
-      OR (started_at < v_today_start AND started_at >= v_today_start - INTERVAL '12 hours')
+      OR (started_at < v_today_start AND (NOW() - started_at) <= INTERVAL '12 hours')
     );
 
   RETURN v_finalized_seconds + v_active_seconds;
@@ -531,26 +529,9 @@ BEGIN
     );
   END IF;
 
-  -- 2. Concurrency & Deduplication: Reuse active unclosed session created in last 12 hours
-  SELECT id INTO v_active_session_id
-  FROM public.watch_history_sessions
-  WHERE user_id = v_user_id
-    AND video_id = p_video_id
-    AND ended_at IS NULL
-    AND started_at >= NOW() - INTERVAL '12 hours'
-  ORDER BY started_at DESC
-  LIMIT 1;
-
-  IF v_active_session_id IS NOT NULL THEN
-    RETURN jsonb_build_object(
-      'success', TRUE,
-      'allowed', TRUE,
-      'session_id', v_active_session_id,
-      'reused', TRUE
-    );
-  END IF;
-
-  -- 3. Create new watch session atomically
+  -- 2. CRIT-41 Playback-Surface Isolation:
+  -- Create an isolated, dedicated watch session for this playback instance.
+  -- Multi-tab / multi-device instances do not share or overwrite each other's sessions.
   INSERT INTO public.watch_history_sessions (user_id, video_id, started_at)
   VALUES (v_user_id, p_video_id, NOW())
   RETURNING id INTO v_session_id;
@@ -569,7 +550,7 @@ GRANT EXECUTE ON FUNCTION public.start_watch_session(UUID) TO authenticated;
 
 
 -- ============================================================================
--- 9. RPC: finalize_watch_session (CRIT-08, CRIT-19 & CRIT-36)
+-- 9. RPC: finalize_watch_session (CRIT-08, CRIT-19, CRIT-36 & CRIT-40)
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.finalize_watch_session(
   p_session_id UUID,
@@ -595,7 +576,7 @@ BEGIN
     RETURN jsonb_build_object('success', FALSE, 'error', 'Kimlik doğrulaması yapılmadı.');
   END IF;
 
-  -- 1. Verify session belongs to caller and is not already finalized (CRIT-08 & CRIT-36)
+  -- 1. Verify session belongs to caller and is not already finalized (CRIT-08, CRIT-36 & CRIT-41)
   SELECT video_id, started_at INTO v_video_id, v_started_at
   FROM public.watch_history_sessions
   WHERE id = p_session_id AND user_id = v_user_id AND ended_at IS NULL
@@ -649,12 +630,12 @@ BEGIN
       completed = v_verified_completed
   WHERE id = p_session_id AND user_id = v_user_id;
 
-  -- 5. Upsert cumulative progress state in watch_history
+  -- 5. CRIT-40: Update cumulative completion state in watch_history WITHOUT overwriting progress_seconds
+  -- (watch_history.progress_seconds represents playback position saved by saveProgress, not session duration)
   INSERT INTO public.watch_history (user_id, video_id, progress_seconds, completed, updated_at)
-  VALUES (v_user_id, v_video_id, v_sanitized_seconds, v_verified_completed, NOW())
+  VALUES (v_user_id, v_video_id, 0, v_verified_completed, NOW())
   ON CONFLICT (user_id, video_id)
   DO UPDATE SET
-    progress_seconds = EXCLUDED.progress_seconds,
     completed = CASE WHEN watch_history.completed THEN TRUE ELSE EXCLUDED.completed END,
     updated_at = NOW();
 
@@ -830,7 +811,7 @@ BEGIN
     );
   END IF;
 
-  -- Compute start time based on period with canonical Europe/Istanbul timezone alignment (CRIT-21)
+  -- Compute start time based on period with canonical Europe/Istanbul timezone alignment (CRIT-21 & CRIT-39)
   CASE LOWER(p_period)
     WHEN 'daily' THEN
       v_start_time := public.get_istanbul_day_start();
@@ -850,22 +831,72 @@ BEGIN
       v_start_time := NOW() - INTERVAL '7 days';
   END CASE;
 
-  -- 1. Totals from watch_history_sessions
+  -- 1. Canonical session overlap totals (CRIT-39):
+  -- Ensures totalWatchTimeSeconds, categoryStats, and topWatchedVideos use the EXACT same
+  -- period overlap calculation (e.g. midnight overlap for daily period: 23:59:30 -> 00:05:00 gets 300s).
+  WITH period_sessions AS (
+    SELECT
+      s.id AS session_id,
+      s.video_id,
+      v.category_id,
+      s.completed,
+      LEAST(
+        s.watched_seconds,
+        GREATEST(
+          0,
+          EXTRACT(
+            EPOCH FROM (
+              LEAST(s.ended_at, NOW()) - GREATEST(s.started_at, v_start_time)
+            )
+          )::BIGINT
+        ),
+        43200
+      ) AS session_watch_seconds
+    FROM public.watch_history_sessions s
+    JOIN public.videos v ON v.id = s.video_id
+    WHERE s.user_id = p_child_id
+      AND s.ended_at IS NOT NULL
+      AND s.ended_at >= v_start_time
+      AND s.started_at <= NOW()
+      AND v.is_deleted = FALSE
+  )
   SELECT
-    COALESCE(SUM(s.watched_seconds), 0),
-    COUNT(DISTINCT s.video_id),
-    COUNT(DISTINCT s.video_id) FILTER (WHERE s.completed = TRUE)
+    COALESCE(SUM(session_watch_seconds), 0),
+    COUNT(DISTINCT video_id) FILTER (WHERE session_watch_seconds > 0),
+    COUNT(DISTINCT video_id) FILTER (WHERE completed = TRUE)
   INTO
     v_total_watch_seconds,
     v_watched_videos_count,
     v_completed_videos_count
-  FROM public.watch_history_sessions s
-  JOIN public.videos v ON v.id = s.video_id
-  WHERE s.user_id = p_child_id
-    AND s.started_at >= v_start_time
-    AND v.is_deleted = FALSE;
+  FROM period_sessions;
 
-  -- 2. Category distribution (CRIT-22: Uses c.title and c.icon_name, NOT c.name or c.color)
+  -- 2. Category distribution (CRIT-22 & CRIT-39: Canonical overlap & correct category columns)
+  WITH period_sessions AS (
+    SELECT
+      s.id AS session_id,
+      s.video_id,
+      v.category_id,
+      s.completed,
+      LEAST(
+        s.watched_seconds,
+        GREATEST(
+          0,
+          EXTRACT(
+            EPOCH FROM (
+              LEAST(s.ended_at, NOW()) - GREATEST(s.started_at, v_start_time)
+            )
+          )::BIGINT
+        ),
+        43200
+      ) AS session_watch_seconds
+    FROM public.watch_history_sessions s
+    JOIN public.videos v ON v.id = s.video_id
+    WHERE s.user_id = p_child_id
+      AND s.ended_at IS NOT NULL
+      AND s.ended_at >= v_start_time
+      AND s.started_at <= NOW()
+      AND v.is_deleted = FALSE
+  )
   SELECT COALESCE(
     jsonb_agg(
       jsonb_build_object(
@@ -886,19 +917,41 @@ BEGIN
   ) INTO v_category_stats
   FROM (
     SELECT
-      v.category_id,
-      SUM(s.watched_seconds) AS total_sec,
-      COUNT(DISTINCT s.video_id) AS vid_count
-    FROM public.watch_history_sessions s
-    JOIN public.videos v ON v.id = s.video_id
-    WHERE s.user_id = p_child_id
-      AND s.started_at >= v_start_time
-      AND v.is_deleted = FALSE
-    GROUP BY v.category_id
+      category_id,
+      SUM(session_watch_seconds) AS total_sec,
+      COUNT(DISTINCT video_id) AS vid_count
+    FROM period_sessions
+    GROUP BY category_id
   ) cat_sum
   JOIN public.categories c ON c.id = cat_sum.category_id;
 
-  -- 3. Top watched videos in period
+  -- 3. Top watched videos in period (CRIT-39: Canonical overlap contribution)
+  WITH period_sessions AS (
+    SELECT
+      s.id AS session_id,
+      s.video_id,
+      v.category_id,
+      s.completed,
+      LEAST(
+        s.watched_seconds,
+        GREATEST(
+          0,
+          EXTRACT(
+            EPOCH FROM (
+              LEAST(s.ended_at, NOW()) - GREATEST(s.started_at, v_start_time)
+            )
+          )::BIGINT
+        ),
+        43200
+      ) AS session_watch_seconds
+    FROM public.watch_history_sessions s
+    JOIN public.videos v ON v.id = s.video_id
+    WHERE s.user_id = p_child_id
+      AND s.ended_at IS NOT NULL
+      AND s.ended_at >= v_start_time
+      AND s.started_at <= NOW()
+      AND v.is_deleted = FALSE
+  )
   SELECT COALESCE(
     jsonb_agg(
       jsonb_build_object(
@@ -913,15 +966,11 @@ BEGIN
   ) INTO v_top_videos
   FROM (
     SELECT
-      s.video_id,
-      COUNT(s.id) AS session_count,
-      SUM(s.watched_seconds) AS total_sec
-    FROM public.watch_history_sessions s
-    JOIN public.videos v ON v.id = s.video_id
-    WHERE s.user_id = p_child_id
-      AND s.started_at >= v_start_time
-      AND v.is_deleted = FALSE
-    GROUP BY s.video_id
+      video_id,
+      COUNT(session_id) AS session_count,
+      SUM(session_watch_seconds) AS total_sec
+    FROM period_sessions
+    GROUP BY video_id
     ORDER BY total_sec DESC
     LIMIT 5
   ) top_v

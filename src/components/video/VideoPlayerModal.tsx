@@ -126,7 +126,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
       }
     };
 
-    const initPlayer = () => {
+    const initPlayer = (startSeconds: number = 0) => {
       if (!iframeContainerRef.current || !window.YT || !window.YT.Player || !isMounted) return;
 
       iframeContainerRef.current.innerHTML = '<div id="yt-player-element" class="w-full h-full"></div>';
@@ -138,6 +138,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
             autoplay: 1,
             rel: 0,
             modestbranding: 1,
+            ...(startSeconds > 0 ? { start: startSeconds } : {}),
           },
           events: {
             onStateChange: handleStateChange,
@@ -148,7 +149,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
       }
     };
 
-    const setupPlayerFlow = () => {
+    const setupPlayerFlow = (startSeconds: number = 0) => {
       // Load YouTube IFrame API if not already loaded
       if (!window.YT) {
         const existingScript = document.getElementById('youtube-iframe-api');
@@ -162,21 +163,28 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
         const previousOnReady = window.onYouTubeIframeAPIReady;
         window.onYouTubeIframeAPIReady = () => {
           if (previousOnReady) previousOnReady();
-          initPlayer();
+          initPlayer(startSeconds);
         };
       } else {
-        initPlayer();
+        initPlayer(startSeconds);
       }
     };
 
     // If user is logged in, start session in DB first (CRIT-18 Server Check)
     if (user?.id) {
-      watchHistoryService.startSession(video.id).then((res) => {
+      Promise.all([
+        watchHistoryService.startSession(video.id),
+        watchHistoryService.getProgress(user.id, video.id),
+      ]).then(([res, prevProgress]) => {
         if (!isMounted) return;
 
         if (res.success && res.sessionId) {
           activeSessionIdRef.current = res.sessionId;
-          setupPlayerFlow();
+          const resumePos = prevProgress?.progress_seconds && !prevProgress.completed ? prevProgress.progress_seconds : 0;
+          if (resumePos > 0) {
+            maxWatchedTimeSecondsRef.current = resumePos;
+          }
+          setupPlayerFlow(resumePos);
         } else {
           // If startSession denied by server (e.g. daily limit/bedtime trigger)
           setAuthState('denied');
@@ -186,7 +194,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
       });
     } else {
       // Public / guest view
-      setupPlayerFlow();
+      setupPlayerFlow(0);
     }
 
     // Visibility change listener: pause timer/video when tab is backgrounded
