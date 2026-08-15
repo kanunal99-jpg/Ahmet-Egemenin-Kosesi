@@ -70,16 +70,17 @@ export class ParentService {
   }
 
   /**
-   * Links a child account to current parent account (CRIT-06)
+   * Links a child account by its registered email address.
+   * The real child UUID is resolved server-side and never exposed in the UI.
    */
-  async linkChild(childId: string): Promise<ServiceOperationResult> {
-    if (!isSupabaseConfigured || !childId) {
-      return { success: false, error: 'Database unconfigured or childId missing', affectedRows: 0 };
+  async linkChild(childEmail: string): Promise<ServiceOperationResult> {
+    if (!isSupabaseConfigured || !childEmail.trim()) {
+      return { success: false, error: 'Database unconfigured or child email missing', affectedRows: 0 };
     }
 
     try {
-      const { data, error } = await supabase.rpc('create_parent_child_link', {
-        p_child_id: childId,
+      const { data, error } = await supabase.rpc('create_parent_child_link_by_email', {
+        p_child_email: childEmail.trim().toLowerCase(),
       });
 
       if (error) {
