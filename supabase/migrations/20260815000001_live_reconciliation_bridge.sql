@@ -109,12 +109,13 @@ BEGIN
 END;
 $$;
 
--- Indexes for watch_history_sessions
+-- Indexes for watch_history_sessions (CRIT-33)
+DROP INDEX IF EXISTS public.idx_wh_sessions_daily_limit;
+DROP INDEX IF EXISTS public.idx_wh_sessions_active_lookup;
 CREATE INDEX IF NOT EXISTS idx_wh_sessions_user_started ON public.watch_history_sessions(user_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_wh_sessions_video_started ON public.watch_history_sessions(video_id, started_at);
-CREATE INDEX IF NOT EXISTS idx_wh_sessions_user_video_started ON public.watch_history_sessions(user_id, video_id, started_at);
-CREATE INDEX IF NOT EXISTS idx_wh_sessions_active_lookup ON public.watch_history_sessions(user_id, video_id) WHERE ended_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_wh_sessions_daily_limit ON public.watch_history_sessions(user_id, started_at) WHERE ended_at IS NULL OR ended_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_wh_sessions_user_video_active ON public.watch_history_sessions(user_id, video_id, started_at) WHERE ended_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_wh_sessions_user_active ON public.watch_history_sessions(user_id, started_at) WHERE ended_at IS NULL;
 
 -- Enable RLS
 ALTER TABLE public.watch_history_sessions ENABLE ROW LEVEL SECURITY;
@@ -678,7 +679,8 @@ BEGIN
   ) INTO v_result
   FROM public.parent_children pc
   JOIN public.profiles p ON p.id = pc.child_id
-  WHERE pc.parent_id = v_caller_id;
+  WHERE pc.parent_id = v_caller_id
+    AND p.role = 'child';
 
   RETURN v_result;
 END;
@@ -689,7 +691,7 @@ GRANT EXECUTE ON FUNCTION public.get_my_children() TO authenticated;
 
 
 -- ============================================================================
--- 12. RPC: get_parent_child_usage_report (CRIT-21 & CRIT-22)
+-- 12. RPC: get_parent_child_usage_report (CRIT-21 & CRIT-22 & CRIT-31 & CRIT-32)
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.get_parent_child_usage_report(
   p_child_id UUID,
@@ -718,17 +720,19 @@ BEGIN
 
   SELECT role INTO v_caller_role FROM public.profiles WHERE id = v_caller_id;
 
-  -- Authorization check:
+  -- Authorization check (CRIT-31 & CRIT-32):
   -- 1. If caller is admin -> ALLOW
-  -- 2. If caller is inspecting self -> ALLOW
-  -- 3. If caller is parent AND child_id is in parent_children -> ALLOW
-  IF v_caller_role = 'admin' OR v_caller_id = p_child_id THEN
+  -- 2. If caller is parent AND child_id is in parent_children -> ALLOW
+  -- 3. Publisher, child self, unrelated child, unauthenticated -> DENIED
+  IF v_caller_role = 'admin' THEN
     v_is_authorized := TRUE;
   ELSIF v_caller_role = 'parent' THEN
     SELECT EXISTS (
       SELECT 1 FROM public.parent_children
       WHERE parent_id = v_caller_id AND child_id = p_child_id
     ) INTO v_is_authorized;
+  ELSE
+    v_is_authorized := FALSE;
   END IF;
 
   IF NOT v_is_authorized THEN
