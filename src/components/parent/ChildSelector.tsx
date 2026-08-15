@@ -98,7 +98,6 @@ export const ChildSelector: React.FC<ChildSelectorProps> = ({
         </form>
       )}
 
-      {/* Child Chips List */}
       {isLoading ? (
         <div className="py-4 text-center text-xs text-slate-400">Çocuk hesapları yükleniyor...</div>
       ) : childrenList.length === 0 ? (
@@ -122,9 +121,6 @@ export const ChildSelector: React.FC<ChildSelectorProps> = ({
               >
                 <UserCheck className={`w-4 h-4 ${isSelected ? 'text-white' : 'text-purple-600'}`} />
                 <span>{child.childName || 'Çocuk Hesabı'}</span>
-                <span className={`text-[10px] font-mono opacity-80 truncate max-w-[80px]`}>
-                  ({child.childId.slice(0, 6)}...)
-                </span>
               </button>
             );
           })}
