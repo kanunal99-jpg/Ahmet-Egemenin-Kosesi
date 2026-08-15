@@ -3,7 +3,6 @@ import { useParams } from 'react-router-dom';
 import { MainLayout } from '../components/layout/MainLayout';
 import { VideoGrid } from '../components/video/VideoGrid';
 import { VideoPlayerModal } from '../components/video/VideoPlayerModal';
-import { ChildInviteCard } from '../components/parent/ChildInviteCard';
 import { DEFAULT_CATEGORIES } from '../constants/categories.constants';
 import { useVideos } from '../hooks/useVideos';
 import { useAuth } from '../hooks/useAuth';
@@ -13,12 +12,13 @@ import { Sparkles, Search, Compass } from 'lucide-react';
 
 export const HomePage: React.FC = () => {
   const { slug } = useParams<{ slug?: string }>();
-  const { user, role } = useAuth();
+  const { user } = useAuth();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeVideo, setActiveVideo] = useState<Video | null>(null);
   const [allowedCategoryIds, setAllowedCategoryIds] = useState<string[] | null>(null);
 
+  // Sync category selection with route slug
   useEffect(() => {
     if (slug) {
       const match = DEFAULT_CATEGORIES.find((c) => c.slug === slug);
@@ -28,6 +28,7 @@ export const HomePage: React.FC = () => {
     }
   }, [slug]);
 
+  // Load allowed categories if restricted by parent
   useEffect(() => {
     if (!user?.id) {
       setAllowedCategoryIds(null);
@@ -57,20 +58,25 @@ export const HomePage: React.FC = () => {
 
   return (
     <MainLayout>
+      {/* Hero Banner */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 text-white p-8 sm:p-12 shadow-xl mb-10">
         <div className="relative z-10 max-w-2xl">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/20 backdrop-blur-md text-xs font-black tracking-wide uppercase mb-4">
             <Sparkles className="w-4 h-4 fill-white" />
             %100 Güvenli Aile Medya Alanı
           </div>
-          <h1 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight">Eğlenceli ve Eğitici İçerikler Burada!</h1>
-          <p className="text-amber-100 text-sm sm:text-base font-medium mt-3 leading-relaxed">Ahmet Egemen&apos;in Köşesi ile masallar, eğitici çizgi filmler, doğa ve hayvan videoları elinizin altında.</p>
+          <h1 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight">
+            Eğlenceli ve Eğitici İçerikler Burada!
+          </h1>
+          <p className="text-amber-100 text-sm sm:text-base font-medium mt-3 leading-relaxed">
+            Ahmet Egemen&apos;in Köşesi ile masallar, eğitici çizgi filmler, doğa ve hayvan videoları elinizin altında.
+          </p>
         </div>
       </div>
 
-      {role === 'child' && <ChildInviteCard />}
-
+      {/* Search and Category Filter Section */}
       <div className="space-y-6 mb-10">
+        {/* Search Bar */}
         <div className="relative max-w-xl">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
           <input
@@ -82,24 +88,48 @@ export const HomePage: React.FC = () => {
           />
         </div>
 
+        {/* Categories Chips */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-          <button onClick={() => setSelectedCategory(null)} className={`px-4 py-2.5 rounded-2xl font-bold text-xs shrink-0 transition-all flex items-center gap-2 ${selectedCategory === null ? 'bg-amber-500 text-white shadow-md' : 'bg-white text-slate-600 border border-amber-100 hover:bg-amber-50'}`}>
+          <button
+            onClick={() => setSelectedCategory(null)}
+            className={`px-4 py-2.5 rounded-2xl font-bold text-xs shrink-0 transition-all flex items-center gap-2 ${
+              selectedCategory === null
+                ? 'bg-amber-500 text-white shadow-md'
+                : 'bg-white text-slate-600 border border-amber-100 hover:bg-amber-50'
+            }`}
+          >
             <Compass className="w-4 h-4" />
             Tümü
           </button>
+
           {visibleCategories.map((cat) => (
-            <button key={cat.id} onClick={() => setSelectedCategory(cat.id)} className={`px-4 py-2.5 rounded-2xl font-bold text-xs shrink-0 transition-all ${selectedCategory === cat.id ? 'bg-amber-500 text-white shadow-md' : 'bg-white text-slate-600 border border-amber-100 hover:bg-amber-50'}`}>
+            <button
+              key={cat.id}
+              onClick={() => setSelectedCategory(cat.id)}
+              className={`px-4 py-2.5 rounded-2xl font-bold text-xs shrink-0 transition-all ${
+                selectedCategory === cat.id
+                  ? 'bg-amber-500 text-white shadow-md'
+                  : 'bg-white text-slate-600 border border-amber-100 hover:bg-amber-50'
+              }`}
+            >
               {cat.title}
             </button>
           ))}
         </div>
       </div>
 
+      {/* Video Grid */}
       <div className="space-y-4">
         <h2 className="text-xl font-black text-slate-800 tracking-tight">Öne Çıkan Videolar</h2>
-        <VideoGrid videos={filteredVideos} onPlay={(v) => setActiveVideo(v)} onRefresh={refetch} isLoading={isLoading} />
+        <VideoGrid
+          videos={filteredVideos}
+          onPlay={(v) => setActiveVideo(v)}
+          onRefresh={refetch}
+          isLoading={isLoading}
+        />
       </div>
 
+      {/* Video Player Modal */}
       <VideoPlayerModal video={activeVideo} onClose={() => setActiveVideo(null)} />
     </MainLayout>
   );
