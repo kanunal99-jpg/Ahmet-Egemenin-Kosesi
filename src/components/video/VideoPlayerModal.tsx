@@ -35,6 +35,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
   const maxWatchedTimeSecondsRef = useRef<number>(0);
   const isCompletedRef = useRef<boolean>(false);
   const heartbeatIntervalRef = useRef<number | null>(null);
+  const consecutiveHeartbeatErrorsRef = useRef<number>(0);
   const isFinalizedRef = useRef<boolean>(false);
 
   // Fail-Closed Authorization state (CRIT-07, CRIT-16)
@@ -93,10 +94,26 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ video, onClo
 
     const startHeartbeat = () => {
       if (heartbeatIntervalRef.current !== null) return;
-      heartbeatIntervalRef.current = window.setInterval(() => {
+      heartbeatIntervalRef.current = window.setInterval(async () => {
         const sid = activeSessionIdRef.current;
-        if (sid && !isFinalizedRef.current && isMounted) {
-          watchHistoryService.heartbeatSession(sid);
+        if (sid && !isFinalizedRef.current && isMounted && !document.hidden) {
+          try {
+            const res = await watchHistoryService.heartbeatSession(sid);
+            if (res.success) {
+              consecutiveHeartbeatErrorsRef.current = 0;
+            } else {
+              consecutiveHeartbeatErrorsRef.current += 1;
+              if (consecutiveHeartbeatErrorsRef.current >= 3) {
+                // If 3 consecutive heartbeats fail on server, pause local timer to prevent false accounting drift
+                stopPlayingTimer();
+              }
+            }
+          } catch {
+            consecutiveHeartbeatErrorsRef.current += 1;
+            if (consecutiveHeartbeatErrorsRef.current >= 3) {
+              stopPlayingTimer();
+            }
+          }
         }
       }, 6000);
     };
