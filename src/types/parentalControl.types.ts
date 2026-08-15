@@ -17,3 +17,11 @@ export interface PlaybackAuthorization {
   message?: string;
   error?: string;
 }
+
+export interface EffectiveParentalSettings {
+  daily_time_limit_minutes: number;
+  allowed_categories: string[] | null;
+  bedtime_start: string | null;
+  bedtime_end: string | null;
+  has_parent?: boolean;
+}

@@ -22,16 +22,19 @@ export const HomePage: React.FC = () => {
   useEffect(() => {
     if (slug) {
       const match = DEFAULT_CATEGORIES.find((c) => c.slug === slug);
-      if (match) {
-        setSelectedCategory(match.id);
-      }
+      setSelectedCategory(match?.id ?? null);
+    } else {
+      setSelectedCategory(null);
     }
   }, [slug]);
 
   // Load allowed categories if restricted by parent
   useEffect(() => {
-    if (!user?.id) return;
-    parentService.getSettings(user.id).then((settings) => {
+    if (!user?.id) {
+      setAllowedCategoryIds(null);
+      return;
+    }
+    parentService.getEffectiveParentalSettings().then((settings) => {
       if (settings?.allowed_categories && settings.allowed_categories.length > 0) {
         setAllowedCategoryIds(settings.allowed_categories);
       } else {

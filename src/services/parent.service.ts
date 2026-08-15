@@ -1,7 +1,30 @@
 import { supabase, isSupabaseConfigured } from './supabase.client';
-import { ParentSettings, ParentChild, ReportTimePeriod, UsageReportData, ServiceOperationResult } from '../types';
+import {
+  ParentSettings,
+  ParentChild,
+  ReportTimePeriod,
+  UsageReportData,
+  ServiceOperationResult,
+  EffectiveParentalSettings,
+} from '../types';
 
 export class ParentService {
+  /**
+   * Retrieves effective parental settings for the caller (child via linked parent or parent own settings) (CRIT-29)
+   */
+  async getEffectiveParentalSettings(): Promise<EffectiveParentalSettings | null> {
+    if (!isSupabaseConfigured) return null;
+
+    try {
+      const { data, error } = await supabase.rpc('get_my_effective_parental_settings');
+
+      if (error || !data) return null;
+      return data as EffectiveParentalSettings;
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Retrieves non-sensitive parent settings status using RPC or secure view (NO pin_hash/failed_attempts)
    */
