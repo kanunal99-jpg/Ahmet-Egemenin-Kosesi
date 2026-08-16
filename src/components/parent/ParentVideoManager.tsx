@@ -350,7 +350,7 @@ export const ParentVideoManager: React.FC = () => {
                   >
                     {DEFAULT_CATEGORIES.map((cat) => (
                       <option key={cat.id} value={cat.id}>
-                        {cat.name}
+                        {cat.title}
                       </option>
                     ))}
                   </select>

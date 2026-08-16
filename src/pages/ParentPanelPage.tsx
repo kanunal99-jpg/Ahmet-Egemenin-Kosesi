@@ -527,7 +527,7 @@ export const ParentPanelPage: React.FC = () => {
                           }`}
                         >
                           {isAllowed && <Check className="w-3.5 h-3.5" />}
-                          {cat.name}
+                          {cat.title}
                         </button>
                       );
                     })}
