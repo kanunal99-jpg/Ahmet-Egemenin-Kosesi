@@ -136,7 +136,9 @@ export class ParentService {
   }
 
   /**
-   * Updates PIN strictly server-side via RPC with mandatory old PIN check when existing
+   * Updates PIN strictly server-side via the canonical JSONB RPC contract.
+   * The RPC result is authoritative; a successful HTTP/RPC call alone is not
+   * considered a successful PIN update.
    */
   async updatePin(userId: string, newPin: string, oldPin?: string): Promise<ServiceOperationResult> {
     if (!isSupabaseConfigured || !userId) {
@@ -144,13 +146,33 @@ export class ParentService {
     }
 
     try {
-      const { error } = await supabase.rpc('update_parent_pin', {
+      const { data, error } = await supabase.rpc('update_parent_pin', {
         p_new_pin: newPin,
         p_old_pin: oldPin || null,
       });
 
       if (error) {
         return { success: false, error: error.message, affectedRows: 0 };
+      }
+
+      const result = data as {
+        success?: boolean;
+        message?: string | null;
+        is_locked?: boolean;
+        failed_attempts?: number;
+        locked_until?: string | null;
+      } | null;
+
+      if (!result || typeof result.success !== 'boolean') {
+        return { success: false, error: 'Geçersiz PIN güncelleme yanıtı.', affectedRows: 0 };
+      }
+
+      if (!result.success) {
+        return {
+          success: false,
+          error: result.message || 'PIN güncellenemedi.',
+          affectedRows: 0,
+        };
       }
 
       return { success: true, affectedRows: 1 };
