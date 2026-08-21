@@ -20,34 +20,16 @@ DECLARE
   v_locked_until TIMESTAMPTZ;
 BEGIN
   IF v_user_id IS NULL THEN
-    RETURN jsonb_build_object(
-      'success', FALSE,
-      'message', 'Kimlik doğrulaması yapılmadı.',
-      'is_locked', FALSE,
-      'needs_setup', FALSE
-    );
+    RETURN jsonb_build_object('success', FALSE, 'message', 'Kimlik doğrulaması yapılmadı.', 'is_locked', FALSE, 'needs_setup', FALSE);
   END IF;
 
-  SELECT role INTO v_user_role
-  FROM public.profiles
-  WHERE id = v_user_id;
-
+  SELECT role INTO v_user_role FROM public.profiles WHERE id = v_user_id;
   IF v_user_role NOT IN ('parent', 'admin') THEN
-    RETURN jsonb_build_object(
-      'success', FALSE,
-      'message', 'Yetkisiz erişim: Bu işlem sadece ebeveyn veya yönetici hesapları içindir.',
-      'is_locked', FALSE,
-      'needs_setup', FALSE
-    );
+    RETURN jsonb_build_object('success', FALSE, 'message', 'Yetkisiz erişim: Bu işlem sadece ebeveyn veya yönetici hesapları içindir.', 'is_locked', FALSE, 'needs_setup', FALSE);
   END IF;
 
   IF p_new_pin IS NULL OR p_new_pin !~ '^[0-9]{4}$' THEN
-    RETURN jsonb_build_object(
-      'success', FALSE,
-      'message', 'Yeni PIN 4 haneli rakamlardan oluşmalıdır.',
-      'is_locked', FALSE,
-      'needs_setup', FALSE
-    );
+    RETURN jsonb_build_object('success', FALSE, 'message', 'Yeni PIN 4 haneli rakamlardan oluşmalıdır.', 'is_locked', FALSE, 'needs_setup', FALSE);
   END IF;
 
   SELECT pin_hash, failed_attempts, locked_until
@@ -59,67 +41,29 @@ BEGIN
   v_failed := COALESCE(v_failed, 0);
 
   IF v_locked_until IS NOT NULL AND v_locked_until > NOW() THEN
-    RETURN jsonb_build_object(
-      'success', FALSE,
-      'message', 'Ebeveyn kilidi aktifken PIN değiştirilemez.',
-      'is_locked', TRUE,
-      'needs_setup', FALSE,
-      'locked_until', v_locked_until
-    );
+    RETURN jsonb_build_object('success', FALSE, 'message', 'Ebeveyn kilidi aktifken PIN değiştirilemez.', 'is_locked', TRUE, 'needs_setup', FALSE, 'locked_until', v_locked_until);
   END IF;
 
   IF v_current_hash IS NOT NULL AND v_current_hash <> '' THEN
     IF p_old_pin IS NULL OR extensions.crypt(p_old_pin, v_current_hash) <> v_current_hash THEN
       v_failed := v_failed + 1;
-
       IF v_failed >= 5 THEN
         v_locked_until := NOW() + INTERVAL '15 minutes';
         UPDATE public.parent_settings
-        SET failed_attempts = v_failed,
-            locked_until = v_locked_until,
-            updated_at = NOW()
+        SET failed_attempts = v_failed, locked_until = v_locked_until, updated_at = NOW()
         WHERE user_id = v_user_id;
-
-        RETURN jsonb_build_object(
-          'success', FALSE,
-          'message', 'Mevcut PIN doğrulaması başarısız. Hesap 15 dakika kilitlendi.',
-          'is_locked', TRUE,
-          'needs_setup', FALSE,
-          'failed_attempts', v_failed,
-          'locked_until', v_locked_until
-        );
+        RETURN jsonb_build_object('success', FALSE, 'message', 'Mevcut PIN doğrulaması başarısız. Hesap 15 dakika kilitlendi.', 'is_locked', TRUE, 'needs_setup', FALSE, 'failed_attempts', v_failed, 'locked_until', v_locked_until);
       END IF;
-
       UPDATE public.parent_settings
-      SET failed_attempts = v_failed,
-          updated_at = NOW()
+      SET failed_attempts = v_failed, updated_at = NOW()
       WHERE user_id = v_user_id;
-
-      RETURN jsonb_build_object(
-        'success', FALSE,
-        'message', 'Mevcut PIN doğrulaması başarısız.',
-        'is_locked', FALSE,
-        'needs_setup', FALSE,
-        'failed_attempts', v_failed
-      );
+      RETURN jsonb_build_object('success', FALSE, 'message', 'Mevcut PIN doğrulaması başarısız.', 'is_locked', FALSE, 'needs_setup', FALSE, 'failed_attempts', v_failed);
     END IF;
   END IF;
 
   IF v_current_hash IS NULL OR v_current_hash = '' THEN
-    INSERT INTO public.parent_settings (
-      user_id,
-      pin_hash,
-      failed_attempts,
-      locked_until,
-      updated_at
-    )
-    VALUES (
-      v_user_id,
-      extensions.crypt(p_new_pin, extensions.gen_salt('bf')),
-      0,
-      NULL,
-      NOW()
-    )
+    INSERT INTO public.parent_settings (user_id, pin_hash, failed_attempts, locked_until, updated_at)
+    VALUES (v_user_id, extensions.crypt(p_new_pin, extensions.gen_salt('bf')), 0, NULL, NOW())
     ON CONFLICT (user_id) DO UPDATE
       SET pin_hash = EXCLUDED.pin_hash,
           failed_attempts = 0,
@@ -134,12 +78,7 @@ BEGIN
     WHERE user_id = v_user_id;
   END IF;
 
-  RETURN jsonb_build_object(
-    'success', TRUE,
-    'message', NULL,
-    'is_locked', FALSE,
-    'needs_setup', FALSE
-  );
+  RETURN jsonb_build_object('success', TRUE, 'message', NULL, 'is_locked', FALSE, 'needs_setup', FALSE);
 END;
 $$;
 
