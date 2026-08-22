@@ -1,6 +1,8 @@
 import { supabase, isSupabaseConfigured } from './supabase.client';
 import { UserProfile, UserRole, SessionResult, AuthSessionStatus } from '../types';
 
+const VALID_PROFILE_ROLES: ReadonlySet<string> = new Set(['child', 'parent', 'publisher', 'admin']);
+
 export class AuthService {
   /**
    * Retrieves profile with explicit status distinction:
@@ -37,13 +39,21 @@ export class AuthService {
         };
       }
 
+      if (typeof data.role !== 'string' || !VALID_PROFILE_ROLES.has(data.role)) {
+        return {
+          profile: null,
+          status: 'PROFILE_QUERY_ERROR',
+          error: 'Profil rolü geçersiz veya tanımsız; erişim güvenli şekilde reddedildi.',
+        };
+      }
+
       return {
         profile: {
           id: data.id,
           first_name: data.first_name,
           last_name: data.last_name,
           avatar_path: data.avatar_path,
-          role: (data.role as UserRole) || 'child',
+          role: data.role as UserRole,
           created_at: data.created_at,
           updated_at: data.updated_at,
         },
@@ -65,7 +75,8 @@ export class AuthService {
   }
 
   /**
-   * Evaluates current session and returns explicit status contract
+   * Evaluates current session and returns explicit status contract.
+   * A missing or invalid profile never receives a privileged or child fallback role.
    */
   async getCurrentSession(): Promise<SessionResult> {
     if (!isSupabaseConfigured) {
@@ -109,7 +120,6 @@ export class AuthService {
         };
       }
 
-      // PROFILE_NOT_FOUND (Auth user exists, but no profiles row yet)
       return {
         user: { id: session.user.id, email: session.user.email },
         profile: null,
