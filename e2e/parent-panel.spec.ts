@@ -41,5 +41,11 @@ test('authenticated parent can access and render all parent panel tabs', async (
   for (const tab of tabs) {
     await page.getByRole('button', { name: tab.label, exact: true }).click();
     await expect(page.getByRole('heading', { name: tab.heading, exact: true })).toBeVisible();
+
+    if (tab.label === 'Kullanım Raporları') {
+      const childSelector = page.getByLabel('Çocuk');
+      const emptyState = page.getByText('Henüz bağlı bir çocuk hesabı bulunmuyor.');
+      await expect(childSelector.or(emptyState)).toBeVisible();
+    }
   }
 });
