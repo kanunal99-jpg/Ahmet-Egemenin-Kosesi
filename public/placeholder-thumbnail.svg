@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Video küçük resmi yok</title>
+  <desc id="desc">İçerik için küçük resim bulunamadı.</desc>
+  <rect width="1280" height="720" fill="#0f172a"/>
+  <circle cx="640" cy="330" r="92" fill="#1e293b"/>
+  <path d="M610 285 L610 375 L690 330 Z" fill="#e2e8f0"/>
+  <text x="640" y="500" text-anchor="middle" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="36" font-weight="700">Video küçük resmi yok</text>
+</svg>
