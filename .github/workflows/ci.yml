@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -48,6 +49,5 @@ jobs:
             if [[ ! "$base" =~ ^[0-9]{14}_[a-z0-9_]+\.sql$ ]]; then
               echo "Invalid migration filename: $base"
               exit 1
-            fi
           done
           echo "All migration filenames are valid."
