@@ -18,7 +18,6 @@ export const HomePage: React.FC = () => {
   const [activeVideo, setActiveVideo] = useState<Video | null>(null);
   const [allowedCategoryIds, setAllowedCategoryIds] = useState<string[] | null>(null);
 
-  // Sync category selection with route slug
   useEffect(() => {
     if (slug) {
       const match = DEFAULT_CATEGORIES.find((c) => c.slug === slug);
@@ -28,7 +27,6 @@ export const HomePage: React.FC = () => {
     }
   }, [slug]);
 
-  // Load allowed categories if restricted by parent
   useEffect(() => {
     if (!user?.id) {
       setAllowedCategoryIds(null);
@@ -58,78 +56,75 @@ export const HomePage: React.FC = () => {
 
   return (
     <MainLayout>
-      {/* Hero Banner */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 text-white p-8 sm:p-12 shadow-xl mb-10">
-        <div className="relative z-10 max-w-2xl">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/20 backdrop-blur-md text-xs font-black tracking-wide uppercase mb-4">
-            <Sparkles className="w-4 h-4 fill-white" />
+      <section className="relative overflow-hidden rounded-[2rem] bg-slate-900 text-white p-7 sm:p-10 lg:p-12 shadow-xl mb-8">
+        <div className="absolute -right-16 -top-16 w-56 h-56 rounded-full bg-blue-700/30 blur-3xl" />
+        <div className="absolute -left-10 -bottom-20 w-48 h-48 rounded-full bg-cyan-500/20 blur-3xl" />
+        <div className="relative z-10 max-w-3xl">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 border border-white/15 text-xs font-black tracking-wide uppercase mb-4">
+            <Sparkles className="w-4 h-4 text-cyan-300" />
             %100 Güvenli Aile Medya Alanı
           </div>
-          <h1 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight">
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-tight">
             Eğlenceli ve Eğitici İçerikler Burada!
           </h1>
-          <p className="text-amber-100 text-sm sm:text-base font-medium mt-3 leading-relaxed">
+          <p className="text-slate-300 text-sm sm:text-base font-medium mt-4 leading-relaxed max-w-2xl">
             Ahmet Egemen&apos;in Köşesi ile masallar, eğitici çizgi filmler, doğa ve hayvan videoları elinizin altında.
           </p>
         </div>
-      </div>
+      </section>
 
-      {/* Search and Category Filter Section */}
-      <div className="space-y-6 mb-10">
-        {/* Search Bar */}
-        <div className="relative max-w-xl">
+      <section className="space-y-5 mb-9" aria-label="İçerik filtreleri">
+        <div className="relative max-w-2xl">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
           <input
             type="text"
             placeholder="Video veya konu ara..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-12 pr-4 py-3.5 rounded-2xl bg-white border border-amber-200/80 shadow-xs focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm font-medium transition-all"
+            className="w-full pl-12 pr-4 py-3.5 rounded-2xl bg-white border border-slate-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30 focus:border-blue-600 text-sm font-medium transition-all"
           />
         </div>
 
-        {/* Categories Chips */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
           <button
             onClick={() => setSelectedCategory(null)}
-            className={`px-4 py-2.5 rounded-2xl font-bold text-xs shrink-0 transition-all flex items-center gap-2 ${
+            aria-pressed={selectedCategory === null}
+            className={`px-4 py-2.5 rounded-xl font-bold text-xs shrink-0 transition-all flex items-center gap-2 border ${
               selectedCategory === null
-                ? 'bg-amber-500 text-white shadow-md'
-                : 'bg-white text-slate-600 border border-amber-100 hover:bg-amber-50'
+                ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300'
             }`}
           >
-            <Compass className="w-4 h-4" />
-            Tümü
+            <Compass className="w-4 h-4" /> Tümü
           </button>
 
           {visibleCategories.map((cat) => (
             <button
               key={cat.id}
               onClick={() => setSelectedCategory(cat.id)}
-              className={`px-4 py-2.5 rounded-2xl font-bold text-xs shrink-0 transition-all ${
+              aria-pressed={selectedCategory === cat.id}
+              className={`px-4 py-2.5 rounded-xl font-bold text-xs shrink-0 transition-all border ${
                 selectedCategory === cat.id
-                  ? 'bg-amber-500 text-white shadow-md'
-                  : 'bg-white text-slate-600 border border-amber-100 hover:bg-amber-50'
+                  ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300'
               }`}
             >
               {cat.title}
             </button>
           ))}
         </div>
-      </div>
+      </section>
 
-      {/* Video Grid */}
-      <div className="space-y-4">
-        <h2 className="text-xl font-black text-slate-800 tracking-tight">Öne Çıkan Videolar</h2>
-        <VideoGrid
-          videos={filteredVideos}
-          onPlay={(v) => setActiveVideo(v)}
-          onRefresh={refetch}
-          isLoading={isLoading}
-        />
-      </div>
+      <section className="space-y-4">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-blue-700">Keşfet</p>
+            <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Öne Çıkan Videolar</h2>
+          </div>
+        </div>
+        <VideoGrid videos={filteredVideos} onPlay={(v) => setActiveVideo(v)} onRefresh={refetch} isLoading={isLoading} />
+      </section>
 
-      {/* Video Player Modal */}
       <VideoPlayerModal video={activeVideo} onClose={() => setActiveVideo(null)} />
     </MainLayout>
   );
