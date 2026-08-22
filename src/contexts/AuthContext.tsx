@@ -60,11 +60,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   useEffect(() => {
-    refreshSession();
+    void refreshSession();
 
     if (isSupabaseConfigured) {
       const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-        refreshSession();
+        // Supabase auth callbacks must not perform awaited Supabase work inline.
+        // Defer the profile/session refresh until after the callback returns.
+        setTimeout(() => {
+          void refreshSession();
+        }, 0);
       });
 
       return () => {
