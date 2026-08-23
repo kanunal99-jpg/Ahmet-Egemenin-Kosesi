@@ -1,14 +1,14 @@
 import { test, expect } from '@playwright/test';
 
 test('unauthenticated users cannot open the parent panel', async ({ page }) => {
-  await page.goto('/parent-panel');
+  await page.goto('parent-panel');
   await expect(page).toHaveURL(/\/login(?:\?|$)/);
   await expect(page.getByRole('heading', { name: 'Hoş Geldiniz' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Ebeveyn Yönetim Paneli' })).toHaveCount(0);
 });
 
 test('login form exposes accessible email, password and submit controls', async ({ page }) => {
-  await page.goto('/login');
+  await page.goto('login');
   await expect(page.getByLabel('E-Posta Adresi')).toBeVisible();
   await expect(page.getByLabel('Şifre')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Giriş Yap' })).toBeVisible();
@@ -20,13 +20,13 @@ test('authenticated parent can access and render all parent panel tabs', async (
     'E2E_EMAIL/E2E_PASSWORD secrets are required for authenticated coverage.',
   );
 
-  await page.goto('/login');
+  await page.goto('login');
   await page.getByLabel('E-Posta Adresi').fill(process.env.E2E_EMAIL!);
   await page.getByLabel('Şifre').fill(process.env.E2E_PASSWORD!);
   await page.getByRole('button', { name: 'Giriş Yap' }).click();
 
   await expect(page).not.toHaveURL(/\/login(?:\?|$)/, { timeout: 15_000 });
-  await page.goto('/parent-panel');
+  await page.goto('parent-panel');
   await expect(page.getByRole('heading', { name: 'Ebeveyn Yönetim Paneli' })).toBeVisible({ timeout: 15_000 });
 
   const tabs = [
