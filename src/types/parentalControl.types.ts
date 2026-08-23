@@ -4,6 +4,8 @@ export type PlaybackAuthorizationReason =
   | 'NOT_CHILD'
   | 'VIDEO_NOT_FOUND'
   | 'VIDEO_DELETED'
+  | 'VIDEO_NOT_PUBLIC'
+  | 'VIDEO_LOOKUP_ERROR'
   | 'CATEGORY_RESTRICTED'
   | 'BEDTIME'
   | 'DAILY_LIMIT'
