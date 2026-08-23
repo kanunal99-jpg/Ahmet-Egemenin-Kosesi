@@ -1,5 +1,28 @@
 import { supabase, isSupabaseConfigured } from './supabase.client';
-import { PlaybackAuthorization } from '../types/parentalControl.types';
+import { PlaybackAuthorization, PlaybackAuthorizationReason } from '../types/parentalControl.types';
+
+const PLAYBACK_REASONS = new Set<PlaybackAuthorizationReason>([
+  'OK',
+  'NOT_AUTHENTICATED',
+  'NOT_CHILD',
+  'VIDEO_NOT_FOUND',
+  'VIDEO_DELETED',
+  'VIDEO_NOT_PUBLIC',
+  'VIDEO_LOOKUP_ERROR',
+  'CATEGORY_RESTRICTED',
+  'BEDTIME',
+  'DAILY_LIMIT',
+  'SETTINGS_UNAVAILABLE',
+  'AUTHORIZATION_ERROR',
+  'SESSION_AUTHORIZATION_FAILED',
+]);
+
+const normalizePlaybackReason = (reason: unknown, allowed: boolean): PlaybackAuthorizationReason => {
+  if (typeof reason === 'string' && PLAYBACK_REASONS.has(reason as PlaybackAuthorizationReason)) {
+    return reason as PlaybackAuthorizationReason;
+  }
+  return allowed ? 'OK' : 'AUTHORIZATION_ERROR';
+};
 
 export class ParentalControlService {
   /**
@@ -79,11 +102,12 @@ export class ParentalControlService {
         };
       }
 
-      const res = data as { allowed?: boolean; reason?: string; message?: string };
+      const res = data as { allowed?: boolean; reason?: unknown; message?: string };
+      const allowed = Boolean(res.allowed);
 
       return {
-        allowed: Boolean(res.allowed),
-        reason: res.reason || (res.allowed ? 'OK' : 'AUTHORIZATION_ERROR'),
+        allowed,
+        reason: normalizePlaybackReason(res.reason, allowed),
         message: res.message,
       };
     } catch (err: unknown) {
