@@ -16,10 +16,15 @@
 
   body {
     background: #f8fafc;
-    color: #0f172a;
+    color: #000000;
     font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+  }
+
+  #root {
+    background: #f8fafc;
+    color: #000000;
   }
 
   button,
@@ -30,13 +35,13 @@
   }
 
   button {
-    color: inherit;
+    color: #000000;
   }
 
   input,
   textarea,
   select {
-    color: #0f172a;
+    color: #000000;
     background-color: #ffffff;
   }
 
@@ -47,6 +52,40 @@
   }
 
   a {
-    color: inherit;
+    color: #000000;
   }
+
+  /* Global contrast guard: never allow UI text to disappear on light surfaces. */
+  button,
+  input,
+  textarea,
+  select,
+  option,
+  label,
+  a,
+  p,
+  span,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  li,
+  td,
+  th {
+    color: #000000 !important;
+  }
+
+  /* Keep SVG icons readable when their parent text color is overridden. */
+  svg {
+    color: currentColor;
+  }
+}
+
+/* GitHub Pages / SPA surfaces must remain opaque and light during route changes. */
+html,
+body,
+#root {
+  background-color: #f8fafc !important;
 }
