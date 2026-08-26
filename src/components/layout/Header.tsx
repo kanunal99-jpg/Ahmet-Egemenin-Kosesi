@@ -1,20 +1,97 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useParent } from '../../hooks/useParent';
 import { ROUTES } from '../../constants/routes.constants';
 import { APP_CONFIG } from '../../constants/app.constants';
-import { Shield, LogOut, User, Sparkles, Home, LogIn, Heart, History } from 'lucide-react';
+import { profileService } from '../../services/profile.service';
+import { supabase, isSupabaseConfigured } from '../../services/supabase.client';
+import { Shield, LogOut, User, Sparkles, Home, LogIn, Heart, History, Camera, Loader2 } from 'lucide-react';
+
+const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
+const AVATAR_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 export const Header: React.FC = () => {
   const { user, profile, role, signOut } = useAuth();
   const { isParentUnlocked, lockParentMode } = useParent();
   const location = useLocation();
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const [avatarPath, setAvatarPath] = useState<string | null>(profile?.avatar_path ?? null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
   const isActive = (path: string) => location.pathname === path;
+
+  useEffect(() => {
+    setAvatarPath(profile?.avatar_path ?? null);
+  }, [profile?.avatar_path]);
 
   const navClass = (path: string) => `px-3.5 py-2.5 rounded-xl font-bold text-sm transition-all flex items-center gap-2 ${
     isActive(path) ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
   }`;
+
+  const avatarUrl = avatarPath
+    ? supabase.storage.from('avatars').getPublicUrl(avatarPath).data.publicUrl
+    : null;
+
+  const handleAvatarChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file || !user) return;
+    if (!isSupabaseConfigured) {
+      setAvatarError('Supabase henüz yapılandırılmadı.');
+      return;
+    }
+    if (!AVATAR_TYPES.has(file.type)) {
+      setAvatarError('Profil fotoğrafı JPG, PNG veya WebP olmalıdır.');
+      return;
+    }
+    if (file.size > AVATAR_MAX_BYTES) {
+      setAvatarError('Profil fotoğrafı en fazla 2 MB olabilir.');
+      return;
+    }
+
+    setAvatarUploading(true);
+    setAvatarError(null);
+
+    const extension = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/png' ? 'png' : 'webp';
+    const token = typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const newPath = `${user.id}/${token}.${extension}`;
+    const previousPath = avatarPath;
+
+    try {
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(newPath, file, {
+          cacheControl: '3600',
+          contentType: file.type,
+          upsert: false,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const updateResult = await profileService.updateAvatarPath(user.id, newPath);
+      if (!updateResult.success) {
+        await supabase.storage.from('avatars').remove([newPath]);
+        throw new Error(updateResult.error || 'Profil fotoğrafı kaydedilemedi.');
+      }
+
+      setAvatarPath(newPath);
+
+      if (previousPath && previousPath !== newPath) {
+        const { error: cleanupError } = await supabase.storage.from('avatars').remove([previousPath]);
+        if (cleanupError) {
+          console.warn('[ProfileAvatar] Previous avatar cleanup failed:', cleanupError.message);
+        }
+      }
+    } catch (error: unknown) {
+      setAvatarError(error instanceof Error ? error.message : 'Profil fotoğrafı yüklenemedi.');
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-md shadow-sm">
@@ -51,9 +128,33 @@ export const Header: React.FC = () => {
             {user ? (
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-2 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200">
-                  <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center text-white font-black text-sm">
-                    {profile?.first_name ? profile.first_name[0].toUpperCase() : <User className="w-4 h-4" />}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    disabled={avatarUploading}
+                    className="relative w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center text-white font-black text-sm overflow-hidden ring-1 ring-slate-200 hover:ring-blue-400 transition-colors disabled:cursor-wait"
+                    title="Profil fotoğrafını değiştir"
+                    aria-label="Profil fotoğrafını değiştir"
+                  >
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt="Profil fotoğrafı" className="w-full h-full object-cover" />
+                    ) : profile?.first_name ? (
+                      profile.first_name[0].toUpperCase()
+                    ) : (
+                      <User className="w-4 h-4" />
+                    )}
+                    <span className="absolute inset-0 bg-slate-900/45 opacity-0 hover:opacity-100 flex items-center justify-center transition-opacity">
+                      {avatarUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+                    </span>
+                  </button>
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={handleAvatarChange}
+                    disabled={avatarUploading}
+                  />
                   <div className="text-left hidden sm:block">
                     <span className="text-xs font-bold text-slate-900 block leading-tight">{profile?.first_name ? profile.first_name : 'Kullanıcı'}</span>
                     <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider block leading-tight">
@@ -67,6 +168,12 @@ export const Header: React.FC = () => {
             ) : <Link to={ROUTES.LOGIN} className="px-4 sm:px-5 py-2.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-sm shadow-sm transition-all flex items-center gap-2"><LogIn className="w-4 h-4" /> Giriş Yap</Link>}
           </div>
         </div>
+
+        {avatarError && user && (
+          <div className="pb-2 text-right text-xs font-semibold text-red-700" role="status" aria-live="polite">
+            {avatarError}
+          </div>
+        )}
 
         <nav className="md:hidden -mx-4 px-4 pb-3 flex items-center gap-2 overflow-x-auto" aria-label="Mobil navigasyon">
           <Link to={ROUTES.HOME} className={navClass(ROUTES.HOME)}><Home className="w-4 h-4" /> Ana Sayfa</Link>
