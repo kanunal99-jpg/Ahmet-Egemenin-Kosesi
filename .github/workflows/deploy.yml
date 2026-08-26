@@ -43,8 +43,8 @@ jobs:
       - name: Build commit
         run: npm run build
         env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_URL: https://ysmpktqnwbgjhtbzpfhc.supabase.co
+          VITE_SUPABASE_ANON_KEY: sb_publishable_V6ARx_7Nw_Mo8l_o-TEHrg_uMNl4EJw
 
       - name: SPA fallback
         run: cp dist/index.html dist/404.html
