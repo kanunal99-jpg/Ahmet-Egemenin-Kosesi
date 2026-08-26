@@ -97,60 +97,54 @@ export const Header: React.FC = () => {
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-md shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between min-h-18 py-3 gap-4">
-          <div className="flex items-center gap-4 min-w-0">
-            <Link to={ROUTES.HOME} className="flex items-center gap-3 group min-w-0 shrink-0">
-              <div className="w-11 h-11 rounded-2xl bg-slate-900 flex items-center justify-center text-white shadow-sm group-hover:bg-blue-700 transition-colors shrink-0">
-                <Sparkles className="w-6 h-6" />
-              </div>
-              <div className="min-w-0">
-                <span className="text-base sm:text-lg font-black tracking-tight text-slate-900 block truncate">{APP_CONFIG.NAME}</span>
-                <span className="text-[10px] sm:text-xs font-bold text-blue-700 tracking-wide uppercase">Güvenli Çocuk Medya</span>
-              </div>
-            </Link>
-
-            {user && (
-              <div className="flex items-center gap-2 border-l border-slate-200 pl-4 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => avatarInputRef.current?.click()}
-                  disabled={avatarUploading}
-                  className="relative w-11 h-11 rounded-full bg-slate-900 flex items-center justify-center text-white font-black text-sm overflow-hidden ring-1 ring-slate-200 hover:ring-blue-400 transition-colors disabled:cursor-wait"
-                  title="Profil fotoğrafını yükle veya değiştir"
-                  aria-label="Profil fotoğrafını yükle veya değiştir"
-                >
-                  {avatarUrl ? (
-                    <img src={avatarUrl} alt="Profil fotoğrafı" className="w-full h-full object-cover" />
-                  ) : profile?.first_name ? (
-                    profile.first_name[0].toUpperCase()
-                  ) : (
-                    <User className="w-4 h-4" />
-                  )}
-                  <span className="absolute inset-x-0 bottom-0 h-4 bg-slate-950/75 flex items-center justify-center">
-                    {avatarUploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Camera className="w-3 h-3" />}
-                  </span>
-                </button>
-                <input
-                  ref={avatarInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="hidden"
-                  onChange={handleAvatarChange}
-                  disabled={avatarUploading}
-                />
-                <div className="hidden sm:block min-w-0">
-                  <span className="text-xs font-bold text-slate-900 block leading-tight">{profile?.first_name || 'Kullanıcı'}</span>
+          <div className="flex items-center min-w-0 shrink-0">
+            <div className="flex items-center gap-3 group min-w-0">
+              {user ? (
+                <>
                   <button
                     type="button"
                     onClick={() => avatarInputRef.current?.click()}
                     disabled={avatarUploading}
-                    className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-extrabold text-blue-700 hover:text-blue-800 disabled:cursor-wait"
+                    className="relative w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-2xl bg-slate-900 flex items-center justify-center text-white font-black text-lg overflow-hidden ring-2 ring-slate-200 shadow-md hover:ring-blue-400 transition-all disabled:cursor-wait shrink-0"
                     title="Profil fotoğrafını yükle veya değiştir"
+                    aria-label="Profil fotoğrafını yükle veya değiştir"
                   >
-                    <Camera className="w-3 h-3" /> Fotoğrafı değiştir
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt="Profil fotoğrafı" className="w-full h-full object-cover" />
+                    ) : profile?.first_name ? (
+                      profile.first_name[0].toUpperCase()
+                    ) : (
+                      <User className="w-7 h-7" />
+                    )}
+                    <span className="absolute inset-x-0 bottom-0 h-6 bg-slate-950/75 flex items-center justify-center">
+                      {avatarUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+                    </span>
                   </button>
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={handleAvatarChange}
+                    disabled={avatarUploading}
+                  />
+                </>
+              ) : (
+                <div className="w-11 h-11 rounded-2xl bg-slate-900 flex items-center justify-center text-white shadow-sm shrink-0">
+                  <Sparkles className="w-6 h-6" />
                 </div>
-              </div>
-            )}
+              )}
+
+              <Link to={ROUTES.HOME} className="min-w-0 group">
+                <span className="text-base sm:text-lg font-black tracking-tight text-slate-900 block truncate">{APP_CONFIG.NAME}</span>
+                <span className="text-[10px] sm:text-xs font-bold text-blue-700 tracking-wide uppercase block">Güvenli Çocuk Medya</span>
+                {user && (
+                  <span className="hidden sm:inline-flex mt-1 items-center gap-1 text-[10px] font-extrabold text-blue-700 group-hover:text-blue-800">
+                    <Camera className="w-3 h-3" /> Fotoğrafı değiştir
+                  </span>
+                )}
+              </Link>
+            </div>
           </div>
 
           <nav className="hidden md:flex flex-1 justify-center items-center gap-1.5 min-w-0" aria-label="Ana navigasyon">
