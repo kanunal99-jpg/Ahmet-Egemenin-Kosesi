@@ -4,6 +4,7 @@ import { videoService } from '../../services/video.service';
 import { DEFAULT_CATEGORIES } from '../../constants/categories.constants';
 import { VideoCard } from '../video/VideoCard';
 import { VideoPlayerModal } from '../video/VideoPlayerModal';
+import { useAuth } from '../../hooks/useAuth';
 import {
   Plus,
   Edit2,
@@ -18,7 +19,10 @@ import {
   X,
 } from 'lucide-react';
 
+const DESIGNATED_PUBLISHER_EMAIL = 'kan.vildan02@gmail.com';
+
 export const ParentVideoManager: React.FC = () => {
+  const { user } = useAuth();
   const [myVideos, setMyVideos] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [activeVideo, setActiveVideo] = useState<Video | null>(null);
@@ -42,7 +46,8 @@ export const ParentVideoManager: React.FC = () => {
   const [videoUrl, setVideoUrl] = useState<string>('');
   const [thumbnailUrl, setThumbnailUrl] = useState<string>('');
   const [durationMinutes, setDurationMinutes] = useState<number>(5);
-  const [visibility, setVisibility] = useState<VideoVisibility>('public');
+  const [visibility, setVisibility] = useState<VideoVisibility>('private');
+  const canPublish = user?.email?.trim().toLowerCase() === DESIGNATED_PUBLISHER_EMAIL;
 
   const fetchMyVideos = useCallback(async () => {
     setIsLoading(true);
@@ -68,7 +73,7 @@ export const ParentVideoManager: React.FC = () => {
     setVideoUrl('');
     setThumbnailUrl('');
     setDurationMinutes(5);
-    setVisibility('public');
+    setVisibility(canPublish ? 'public' : 'private');
     setFormError(null);
     setFormSuccess(null);
     setIsFormOpen(true);
@@ -82,7 +87,7 @@ export const ParentVideoManager: React.FC = () => {
     setVideoUrl(video.video_url || '');
     setThumbnailUrl(video.thumbnail_url || '');
     setDurationMinutes(Math.max(1, Math.round((video.duration || 0) / 60)));
-    setVisibility(video.visibility || 'public');
+    setVisibility(canPublish ? (video.visibility || 'private') : 'private');
     setFormError(null);
     setFormSuccess(null);
     setIsFormOpen(true);
@@ -105,9 +110,9 @@ export const ParentVideoManager: React.FC = () => {
     setIsSubmitting(true);
     try {
       const durationSeconds = Math.max(0, durationMinutes * 60);
+      const effectiveVisibility: VideoVisibility = canPublish ? visibility : 'private';
 
       if (editingVideo) {
-        // Update
         const updateInput: VideoUpdateInput = {
           title: title.trim(),
           description: description.trim() || undefined,
@@ -115,7 +120,7 @@ export const ParentVideoManager: React.FC = () => {
           video_url: videoUrl.trim(),
           thumbnail_url: thumbnailUrl.trim() || undefined,
           duration: durationSeconds,
-          visibility,
+          visibility: effectiveVisibility,
         };
 
         const result = await videoService.updateVideo(editingVideo.id, updateInput);
@@ -126,7 +131,6 @@ export const ParentVideoManager: React.FC = () => {
 
         setFormSuccess('Video başarıyla güncellendi.');
       } else {
-        // Create
         const createInput: VideoCreateInput = {
           title: title.trim(),
           description: description.trim() || undefined,
@@ -134,7 +138,7 @@ export const ParentVideoManager: React.FC = () => {
           video_url: videoUrl.trim(),
           thumbnail_url: thumbnailUrl.trim() || undefined,
           duration: durationSeconds,
-          visibility,
+          visibility: effectiveVisibility,
         };
 
         const result = await videoService.createVideo(createInput);
@@ -143,7 +147,7 @@ export const ParentVideoManager: React.FC = () => {
           return;
         }
 
-        setFormSuccess('Video başarıyla oluşturuldu ve yayınlandı.');
+        setFormSuccess(canPublish ? 'Video başarıyla oluşturuldu ve yayınlandı.' : 'Video başarıyla oluşturuldu ve gizli olarak kaydedildi.');
       }
 
       await fetchMyVideos();
@@ -356,20 +360,32 @@ export const ParentVideoManager: React.FC = () => {
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Görünürlük
-                  </label>
-                  <select
-                    value={visibility}
-                    onChange={(e) => setVisibility(e.target.value as VideoVisibility)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="public">Herkese Açık</option>
-                    <option value="unlisted">Liste Dışı</option>
-                    <option value="private">Gizli</option>
-                  </select>
-                </div>
+                {canPublish ? (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Görünürlük
+                    </label>
+                    <select
+                      value={visibility}
+                      onChange={(e) => setVisibility(e.target.value as VideoVisibility)}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="public">Herkese Açık</option>
+                      <option value="unlisted">Liste Dışı</option>
+                      <option value="private">Gizli</option>
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Görünürlük
+                    </label>
+                    <div className="w-full px-3.5 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-slate-600 text-sm flex items-center gap-2">
+                      <Lock className="w-4 h-4" />
+                      Gizli · yalnızca sizin profiliniz
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
