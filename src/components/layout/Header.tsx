@@ -96,16 +96,16 @@ export const Header: React.FC = () => {
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-md shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between min-h-[270px] py-3 gap-4">
+        <div className="flex items-center justify-between min-h-[530px] py-4 gap-6">
           <div className="flex items-center min-w-0 shrink-0">
-            <div className="flex items-center gap-5 group min-w-0">
+            <div className="flex items-center gap-6 group min-w-0">
               {user ? (
                 <>
                   <button
                     type="button"
                     onClick={() => avatarInputRef.current?.click()}
                     disabled={avatarUploading}
-                    className="relative w-[500px] h-[375px] max-w-[500px] max-h-[375px] rounded-3xl bg-slate-900 flex items-center justify-center text-white font-black text-4xl overflow-hidden ring-2 ring-slate-200 shadow-xl hover:ring-blue-400 transition-all disabled:cursor-wait shrink-0"
+                    className="relative w-full max-w-[750px] h-[500px] rounded-3xl bg-slate-900 flex items-center justify-center text-white font-black text-4xl overflow-hidden ring-2 ring-slate-200 shadow-xl hover:ring-blue-400 transition-all disabled:cursor-wait shrink-0"
                     title="Profil fotoğrafını yükle veya değiştir"
                     aria-label="Profil fotoğrafını yükle veya değiştir"
                   >
