@@ -19,7 +19,7 @@ export type AuthSessionStatus =
 export interface SessionResult {
   user: { id: string; email?: string } | null;
   profile: UserProfile | null;
-  role: UserRole;
+  role: UserRole | null;
   status: AuthSessionStatus;
   error?: string | null;
 }
@@ -27,7 +27,7 @@ export interface SessionResult {
 export interface AuthState {
   user: { id: string; email?: string } | null;
   profile: UserProfile | null;
-  role: UserRole;
+  role: UserRole | null;
   status: AuthSessionStatus;
   isLoading: boolean;
   error: string | null;
