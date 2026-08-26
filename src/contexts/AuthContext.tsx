@@ -15,11 +15,12 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const DEFAULT_ROLE: UserRole = 'child';
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [role, setRole] = useState<UserRole>('guest');
+  const [role, setRole] = useState<UserRole>(DEFAULT_ROLE);
   const [authStatus, setAuthStatus] = useState<AuthSessionStatus>('NO_SESSION');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +51,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setError(msg);
       setUser(null);
       setProfile(null);
-      setRole('guest');
+      setRole(DEFAULT_ROLE);
       setAuthStatus('PROFILE_QUERY_ERROR');
     } finally {
       if (sequenceId === requestSequenceRef.current) {
@@ -82,7 +83,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     await authService.signOut();
     setUser(null);
     setProfile(null);
-    setRole('guest');
+    setRole(DEFAULT_ROLE);
     setAuthStatus('NO_SESSION');
     setError(null);
   };
