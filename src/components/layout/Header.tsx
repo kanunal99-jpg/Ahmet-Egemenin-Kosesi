@@ -147,6 +147,16 @@ export const Header: React.FC = () => {
                       {avatarUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
                     </span>
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    disabled={avatarUploading}
+                    className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-extrabold text-slate-700 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 transition-colors disabled:cursor-wait"
+                    title="Profil fotoğrafı yükle veya değiştir"
+                  >
+                    {avatarUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+                    Profil Fotoğrafı
+                  </button>
                   <input
                     ref={avatarInputRef}
                     type="file"
@@ -155,7 +165,7 @@ export const Header: React.FC = () => {
                     onChange={handleAvatarChange}
                     disabled={avatarUploading}
                   />
-                  <div className="text-left hidden sm:block">
+                  <div className="text-left hidden md:block">
                     <span className="text-xs font-bold text-slate-900 block leading-tight">{profile?.first_name ? profile.first_name : 'Kullanıcı'}</span>
                     <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider block leading-tight">
                       {role === 'publisher' ? 'Yayıncı' : role === 'admin' ? 'Yönetici' : role === 'parent' ? 'Ebeveyn' : role === 'child' ? 'Çocuk' : 'Kullanıcı'}
