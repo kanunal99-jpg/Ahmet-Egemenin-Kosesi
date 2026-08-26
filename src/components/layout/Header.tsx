@@ -128,48 +128,50 @@ export const Header: React.FC = () => {
             {user ? (
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-2 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200">
-                  <button
-                    type="button"
-                    onClick={() => avatarInputRef.current?.click()}
-                    disabled={avatarUploading}
-                    className="relative w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center text-white font-black text-sm overflow-hidden ring-1 ring-slate-200 hover:ring-blue-400 transition-colors disabled:cursor-wait"
-                    title="Profil fotoğrafını değiştir"
-                    aria-label="Profil fotoğrafını değiştir"
-                  >
-                    {avatarUrl ? (
-                      <img src={avatarUrl} alt="Profil fotoğrafı" className="w-full h-full object-cover" />
-                    ) : profile?.first_name ? (
-                      profile.first_name[0].toUpperCase()
-                    ) : (
-                      <User className="w-4 h-4" />
-                    )}
-                    <span className="absolute inset-0 bg-slate-900/45 opacity-0 hover:opacity-100 flex items-center justify-center transition-opacity">
-                      {avatarUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => avatarInputRef.current?.click()}
-                    disabled={avatarUploading}
-                    className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-extrabold text-slate-700 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 transition-colors disabled:cursor-wait"
-                    title="Profil fotoğrafı yükle veya değiştir"
-                  >
-                    {avatarUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
-                    Profil Fotoğrafı
-                  </button>
-                  <input
-                    ref={avatarInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className="hidden"
-                    onChange={handleAvatarChange}
-                    disabled={avatarUploading}
-                  />
-                  <div className="text-left hidden md:block">
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => avatarInputRef.current?.click()}
+                      disabled={avatarUploading}
+                      className="relative w-10 h-10 rounded-full bg-slate-900 flex items-center justify-center text-white font-black text-sm overflow-hidden ring-1 ring-slate-200 hover:ring-blue-400 transition-colors disabled:cursor-wait"
+                      title="Profil fotoğrafını değiştir"
+                      aria-label="Profil fotoğrafını değiştir"
+                    >
+                      {avatarUrl ? (
+                        <img src={avatarUrl} alt="Profil fotoğrafı" className="w-full h-full object-cover" />
+                      ) : profile?.first_name ? (
+                        profile.first_name[0].toUpperCase()
+                      ) : (
+                        <User className="w-4 h-4" />
+                      )}
+                      <span className="absolute inset-x-0 bottom-0 h-4 bg-slate-950/75 flex items-center justify-center">
+                        {avatarUploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Camera className="w-3 h-3" />}
+                      </span>
+                    </button>
+                    <input
+                      ref={avatarInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={handleAvatarChange}
+                      disabled={avatarUploading}
+                    />
+                  </div>
+                  <div className="text-left hidden sm:block min-w-0">
                     <span className="text-xs font-bold text-slate-900 block leading-tight">{profile?.first_name ? profile.first_name : 'Kullanıcı'}</span>
                     <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider block leading-tight">
                       {role === 'publisher' ? 'Yayıncı' : role === 'admin' ? 'Yönetici' : role === 'parent' ? 'Ebeveyn' : role === 'child' ? 'Çocuk' : 'Kullanıcı'}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => avatarInputRef.current?.click()}
+                      disabled={avatarUploading}
+                      className="mt-1 inline-flex items-center gap-1 text-[10px] font-extrabold text-blue-700 hover:text-blue-800 disabled:cursor-wait"
+                      title="Profil fotoğrafını yükle veya değiştir"
+                    >
+                      {avatarUploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Camera className="w-3 h-3" />}
+                      Fotoğrafı değiştir
+                    </button>
                   </div>
                 </div>
                 {isParentUnlocked && <button onClick={lockParentMode} className="p-2 rounded-xl text-slate-500 hover:bg-emerald-50 hover:text-emerald-700 transition-colors" title="Ebeveyn Modunu Kilitle"><Shield className="w-5 h-5 text-emerald-600" /></button>}
