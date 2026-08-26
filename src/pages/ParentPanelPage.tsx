@@ -365,7 +365,7 @@ export const ParentPanelPage: React.FC = () => {
             ) : historyVideos.length === 0 ? (
               <div className="text-center py-12 bg-white rounded-3xl border border-slate-100 text-slate-400 text-sm">Henüz izlenmiş video geçmişi bulunmuyor.</div>
             ) : (
-              <VideoGrid videos={historyVideos} onPlayVideo={setActiveVideo} />
+              <VideoGrid videos={historyVideos} onPlay={setActiveVideo} />
             )}
           </div>
         )}
@@ -384,7 +384,7 @@ export const ParentPanelPage: React.FC = () => {
             ) : favoriteVideos.length === 0 ? (
               <div className="text-center py-12 bg-white rounded-3xl border border-slate-100 text-slate-400 text-sm">Henüz favorilere eklenmiş bir video yok.</div>
             ) : (
-              <VideoGrid videos={favoriteVideos} onPlayVideo={setActiveVideo} />
+              <VideoGrid videos={favoriteVideos} onPlay={setActiveVideo} />
             )}
           </div>
         )}
