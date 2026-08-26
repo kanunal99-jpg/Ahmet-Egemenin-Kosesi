@@ -96,18 +96,64 @@ export const Header: React.FC = () => {
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-md shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between min-h-18 py-3 gap-3">
-          <Link to={ROUTES.HOME} className="flex items-center gap-3 group min-w-0">
-            <div className="w-11 h-11 rounded-2xl bg-slate-900 flex items-center justify-center text-white shadow-sm group-hover:bg-blue-700 transition-colors shrink-0">
-              <Sparkles className="w-6 h-6" />
-            </div>
-            <div className="min-w-0">
-              <span className="text-base sm:text-lg font-black tracking-tight text-slate-900 block truncate">{APP_CONFIG.NAME}</span>
-              <span className="text-[10px] sm:text-xs font-bold text-blue-700 tracking-wide uppercase">Güvenli Çocuk Medya</span>
-            </div>
-          </Link>
+        <div className="flex items-center justify-between min-h-18 py-3 gap-4">
+          <div className="flex items-center gap-4 min-w-0">
+            <Link to={ROUTES.HOME} className="flex items-center gap-3 group min-w-0 shrink-0">
+              <div className="w-11 h-11 rounded-2xl bg-slate-900 flex items-center justify-center text-white shadow-sm group-hover:bg-blue-700 transition-colors shrink-0">
+                <Sparkles className="w-6 h-6" />
+              </div>
+              <div className="min-w-0">
+                <span className="text-base sm:text-lg font-black tracking-tight text-slate-900 block truncate">{APP_CONFIG.NAME}</span>
+                <span className="text-[10px] sm:text-xs font-bold text-blue-700 tracking-wide uppercase">Güvenli Çocuk Medya</span>
+              </div>
+            </Link>
 
-          <nav className="hidden md:flex items-center gap-1.5" aria-label="Ana navigasyon">
+            {user && (
+              <div className="flex items-center gap-2 border-l border-slate-200 pl-4 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => avatarInputRef.current?.click()}
+                  disabled={avatarUploading}
+                  className="relative w-11 h-11 rounded-full bg-slate-900 flex items-center justify-center text-white font-black text-sm overflow-hidden ring-1 ring-slate-200 hover:ring-blue-400 transition-colors disabled:cursor-wait"
+                  title="Profil fotoğrafını yükle veya değiştir"
+                  aria-label="Profil fotoğrafını yükle veya değiştir"
+                >
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="Profil fotoğrafı" className="w-full h-full object-cover" />
+                  ) : profile?.first_name ? (
+                    profile.first_name[0].toUpperCase()
+                  ) : (
+                    <User className="w-4 h-4" />
+                  )}
+                  <span className="absolute inset-x-0 bottom-0 h-4 bg-slate-950/75 flex items-center justify-center">
+                    {avatarUploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Camera className="w-3 h-3" />}
+                  </span>
+                </button>
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={handleAvatarChange}
+                  disabled={avatarUploading}
+                />
+                <div className="hidden sm:block min-w-0">
+                  <span className="text-xs font-bold text-slate-900 block leading-tight">{profile?.first_name || 'Kullanıcı'}</span>
+                  <button
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    disabled={avatarUploading}
+                    className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-extrabold text-blue-700 hover:text-blue-800 disabled:cursor-wait"
+                    title="Profil fotoğrafını yükle veya değiştir"
+                  >
+                    <Camera className="w-3 h-3" /> Fotoğrafı değiştir
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <nav className="hidden md:flex flex-1 justify-center items-center gap-1.5 min-w-0" aria-label="Ana navigasyon">
             <Link to={ROUTES.HOME} className={navClass(ROUTES.HOME)}><Home className="w-4 h-4" /> Ana Sayfa</Link>
             {user && <>
               <Link to={ROUTES.FAVORITES} className={navClass(ROUTES.FAVORITES)}><Heart className="w-4 h-4" /> Favoriler</Link>
@@ -115,10 +161,9 @@ export const Header: React.FC = () => {
             </>}
             {(role === 'parent' || role === 'admin') && (
               <Link to={ROUTES.PARENT_PANEL} className={`px-4 py-2.5 rounded-xl font-bold text-sm transition-all flex items-center gap-2 border ${
-                isActive(ROUTES.PARENT_PANEL) ? 'bg-blue-700 text-white border-blue-700 shadow-sm' : isParentUnlocked ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                isActive(ROUTES.PARENT_PANEL) ? 'bg-blue-700 text-white border-blue-700' : isParentUnlocked ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
               }`}>
-                <Shield className={`w-4 h-4 ${isParentUnlocked ? 'text-emerald-600' : isActive(ROUTES.PARENT_PANEL) ? 'text-white' : 'text-blue-700'}`} />
-                Ebeveyn Paneli
+                <Shield className="w-4 h-4" /> Ebeveyn Paneli
                 {isParentUnlocked && <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Kilit Açık" />}
               </Link>
             )}
@@ -126,63 +171,18 @@ export const Header: React.FC = () => {
 
           <div className="flex items-center gap-2 shrink-0">
             {user ? (
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-2 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200">
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => avatarInputRef.current?.click()}
-                      disabled={avatarUploading}
-                      className="relative w-10 h-10 rounded-full bg-slate-900 flex items-center justify-center text-white font-black text-sm overflow-hidden ring-1 ring-slate-200 hover:ring-blue-400 transition-colors disabled:cursor-wait"
-                      title="Profil fotoğrafını değiştir"
-                      aria-label="Profil fotoğrafını değiştir"
-                    >
-                      {avatarUrl ? (
-                        <img src={avatarUrl} alt="Profil fotoğrafı" className="w-full h-full object-cover" />
-                      ) : profile?.first_name ? (
-                        profile.first_name[0].toUpperCase()
-                      ) : (
-                        <User className="w-4 h-4" />
-                      )}
-                      <span className="absolute inset-x-0 bottom-0 h-4 bg-slate-950/75 flex items-center justify-center">
-                        {avatarUploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Camera className="w-3 h-3" />}
-                      </span>
-                    </button>
-                    <input
-                      ref={avatarInputRef}
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      className="hidden"
-                      onChange={handleAvatarChange}
-                      disabled={avatarUploading}
-                    />
-                  </div>
-                  <div className="text-left hidden sm:block min-w-0">
-                    <span className="text-xs font-bold text-slate-900 block leading-tight">{profile?.first_name ? profile.first_name : 'Kullanıcı'}</span>
-                    <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider block leading-tight">
-                      {role === 'publisher' ? 'Yayıncı' : role === 'admin' ? 'Yönetici' : role === 'parent' ? 'Ebeveyn' : role === 'child' ? 'Çocuk' : 'Kullanıcı'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => avatarInputRef.current?.click()}
-                      disabled={avatarUploading}
-                      className="mt-1 inline-flex items-center gap-1 text-[10px] font-extrabold text-blue-700 hover:text-blue-800 disabled:cursor-wait"
-                      title="Profil fotoğrafını yükle veya değiştir"
-                    >
-                      {avatarUploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Camera className="w-3 h-3" />}
-                      Fotoğrafı değiştir
-                    </button>
-                  </div>
-                </div>
+              <>
                 {isParentUnlocked && <button onClick={lockParentMode} className="p-2 rounded-xl text-slate-500 hover:bg-emerald-50 hover:text-emerald-700 transition-colors" title="Ebeveyn Modunu Kilitle"><Shield className="w-5 h-5 text-emerald-600" /></button>}
                 <button onClick={() => signOut()} className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors" title="Çıkış Yap"><LogOut className="w-5 h-5" /></button>
-              </div>
-            ) : <Link to={ROUTES.LOGIN} className="px-4 sm:px-5 py-2.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-sm shadow-sm transition-all flex items-center gap-2"><LogIn className="w-4 h-4" /> Giriş Yap</Link>}
+              </>
+            ) : (
+              <Link to={ROUTES.LOGIN} className="px-4 sm:px-5 py-2.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-sm shadow-sm transition-all flex items-center gap-2"><LogIn className="w-4 h-4" /> Giriş Yap</Link>
+            )}
           </div>
         </div>
 
         {avatarError && user && (
-          <div className="pb-2 text-right text-xs font-semibold text-red-700" role="status" aria-live="polite">
+          <div className="pb-2 text-left text-xs font-semibold text-red-700" role="status" aria-live="polite">
             {avatarError}
           </div>
         )}
