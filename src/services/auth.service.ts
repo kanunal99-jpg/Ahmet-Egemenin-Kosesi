@@ -76,11 +76,11 @@ export class AuthService {
 
   /**
    * Evaluates current session and returns explicit status contract.
-   * A missing or invalid profile never receives a privileged or child fallback role.
+   * A missing or invalid profile never receives a fallback database role.
    */
   async getCurrentSession(): Promise<SessionResult> {
     if (!isSupabaseConfigured) {
-      return { user: null, profile: null, role: 'guest', status: 'NO_SESSION' };
+      return { user: null, profile: null, role: null, status: 'NO_SESSION' };
     }
 
     try {
@@ -89,14 +89,14 @@ export class AuthService {
         return {
           user: null,
           profile: null,
-          role: 'guest',
+          role: null,
           status: 'NO_SESSION',
           error: sessionError.message,
         };
       }
 
       if (!session?.user) {
-        return { user: null, profile: null, role: 'guest', status: 'NO_SESSION' };
+        return { user: null, profile: null, role: null, status: 'NO_SESSION' };
       }
 
       const { profile, status, error: profileErr } = await this.getProfileResult(session.user.id);
@@ -114,7 +114,7 @@ export class AuthService {
         return {
           user: { id: session.user.id, email: session.user.email },
           profile: null,
-          role: 'guest',
+          role: null,
           status: 'PROFILE_QUERY_ERROR',
           error: profileErr || 'Profil sorgusu sırasında veritabanı hatası oluştu.',
         };
@@ -123,7 +123,7 @@ export class AuthService {
       return {
         user: { id: session.user.id, email: session.user.email },
         profile: null,
-        role: 'guest',
+        role: null,
         status: 'PROFILE_NOT_FOUND',
         error: 'Kullanıcı profili bulunamadı.',
       };
@@ -132,7 +132,7 @@ export class AuthService {
       return {
         user: null,
         profile: null,
-        role: 'guest',
+        role: null,
         status: 'PROFILE_QUERY_ERROR',
         error: msg,
       };
