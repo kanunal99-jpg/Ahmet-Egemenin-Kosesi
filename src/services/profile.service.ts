@@ -8,12 +8,13 @@ export class ProfileService {
     }
 
     try {
-      const payload = {
-        first_name: updates.first_name,
-        last_name: updates.last_name,
-        avatar_path: updates.avatar_path,
+      const payload: Record<string, string | null> = {
         updated_at: new Date().toISOString(),
       };
+
+      if (updates.first_name !== undefined) payload.first_name = updates.first_name;
+      if (updates.last_name !== undefined) payload.last_name = updates.last_name;
+      if (updates.avatar_path !== undefined) payload.avatar_path = updates.avatar_path;
 
       const { data, error, count } = await supabase
         .from('profiles')
@@ -31,6 +32,10 @@ export class ProfileService {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       return { success: false, error: msg, affectedRows: 0 };
     }
+  }
+
+  async updateAvatarPath(userId: string, avatarPath: string | null): Promise<ServiceOperationResult<UserProfile>> {
+    return this.updateProfile(userId, { avatar_path: avatarPath });
   }
 }
 
