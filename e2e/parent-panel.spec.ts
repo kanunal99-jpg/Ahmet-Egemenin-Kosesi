@@ -81,6 +81,14 @@ test('authenticated parent can access and render all parent panel tabs', async (
     }
   }
 
+  await page.getByRole('link', { name: 'Favoriler' }).click();
+  await expect(page).toHaveURL(/\/favorites(?:\?|$)/);
+  await expect(page.getByRole('heading', { name: 'Favori Videolarım' })).toBeVisible();
+
+  await page.getByRole('link', { name: 'Geçmiş' }).click();
+  await expect(page).toHaveURL(/\/history(?:\?|$)/);
+  await expect(page.getByRole('heading', { name: 'İzleme Geçmişim' })).toBeVisible();
+
   await page.getByRole('button', { name: 'Çıkış Yap' }).click();
   await expect(page).toHaveURL(/\/login(?:\?|$)/, { timeout: 10_000 });
   await expect(page.getByRole('heading', { name: 'Hoş Geldiniz' })).toBeVisible();
