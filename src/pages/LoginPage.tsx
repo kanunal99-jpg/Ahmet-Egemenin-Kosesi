@@ -41,7 +41,7 @@ export const LoginPage: React.FC = () => {
           <h1 className="text-2xl font-black text-slate-900">Hoş Geldiniz</h1>
           <p className="text-sm text-slate-500 mt-2 leading-relaxed">Favorilerinize ve izleme geçmişinize erişmek için hesabınıza giriş yapın.</p>
         </div>
-        {error && <div className="mb-5 p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex items-center gap-2"><AlertCircle className="w-4 h-4 shrink-0" /><span>{error}</span></div>}
+        {error && <div role="alert" className="mb-5 p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex items-center gap-2"><AlertCircle className="w-4 h-4 shrink-0" /><span>{error}</span></div>}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="login-email" className="block text-xs font-bold text-slate-700 mb-1.5">E-Posta Adresi</label>
