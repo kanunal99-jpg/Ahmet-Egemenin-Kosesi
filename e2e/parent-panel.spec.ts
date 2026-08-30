@@ -7,6 +7,11 @@ test('home page loads its primary content', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Tümü', exact: true })).toHaveAttribute('aria-pressed', 'true');
 });
 
+test('empty public catalog renders its empty state', async ({ page }) => {
+  await page.goto('');
+  await expect(page.getByRole('heading', { name: 'Henüz Video Bulunmuyor' })).toBeVisible({ timeout: 15_000 });
+});
+
 test('category filter changes selected state', async ({ page }) => {
   await page.goto('');
   const category = page.getByRole('button', { name: 'Masallar', exact: true });
