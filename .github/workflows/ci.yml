@@ -80,13 +80,12 @@ jobs:
           E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
         run: |
           set -euo pipefail
-          {
-            echo "VITE_SUPABASE_URL=https://ysmpktqnwbgjhtbzpfhc.supabase.co"
-            echo "VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}"
-          } >> "$GITHUB_OUTPUT"
+          echo "VITE_SUPABASE_URL=https://ysmpktqnwbgjhtbzpfhc.supabase.co" >> "$GITHUB_OUTPUT"
+          echo "VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY || 'sb_publishable_V6ARx_7Nw_Mo8l_o-TEHrg_uMNl4EJw' }}" >> "$GITHUB_OUTPUT"
 
           if [[ -n "${E2E_EMAIL:-}" && -n "${E2E_PASSWORD:-}" ]]; then
             echo "authenticated_coverage=true" >> "$GITHUB_OUTPUT"
+            echo "Authenticated E2E credentials are configured."
           else
             echo "authenticated_coverage=false" >> "$GITHUB_OUTPUT"
             echo "WARNING: E2E_EMAIL/E2E_PASSWORD are not configured; authenticated E2E coverage will be skipped." >&2
