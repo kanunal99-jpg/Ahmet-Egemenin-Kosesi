@@ -72,6 +72,24 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
+      - name: Validate E2E configuration
+        shell: bash
+        env:
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          required=(E2E_EMAIL E2E_PASSWORD VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY)
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required CI secret/config: ${name}"
+              exit 1
+            fi
+          done
+          echo "All required E2E configuration variables are present."
+
       - name: Run browser tests
         run: npm run test:e2e
         env:
