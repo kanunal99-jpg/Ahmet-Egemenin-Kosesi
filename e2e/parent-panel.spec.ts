@@ -80,4 +80,8 @@ test('authenticated parent can access and render all parent panel tabs', async (
       await expect(childSelector.or(emptyState)).toBeVisible();
     }
   }
+
+  await page.getByRole('button', { name: 'Çıkış Yap' }).click();
+  await expect(page).toHaveURL(/\/login(?:\?|$)/, { timeout: 10_000 });
+  await expect(page.getByRole('heading', { name: 'Hoş Geldiniz' })).toBeVisible();
 });
