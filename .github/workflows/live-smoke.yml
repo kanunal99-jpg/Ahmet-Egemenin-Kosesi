@@ -1,0 +1,58 @@
+name: Live production smoke
+
+on:
+  workflow_run:
+    workflows: [Deploy to GitHub Pages]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run live production smoke tests
+        run: npm run test:e2e -- e2e/live-smoke.spec.ts
+        env:
+          CI: true
+          PLAYWRIGHT_BASE_URL: https://kanunal99-jpg.github.io/Ahmet-Egemenin-Kosesi/
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: live-playwright-report
+          path: playwright-report/
+          if-no-files-found: ignore
+
+      - name: Upload Playwright test artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: live-playwright-test-artifacts
+          path: test-results/
+          if-no-files-found: ignore
