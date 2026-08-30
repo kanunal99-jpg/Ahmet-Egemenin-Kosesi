@@ -18,7 +18,11 @@ export const RegisterPage: React.FC = () => {
     if (!isSupabaseConfigured) return setError('Supabase henüz yapılandırılmadı.');
     setIsLoading(true); setError(null);
     try {
-      const { data, error: authError } = await supabase.auth.signUp({ email, password, options: { data: { first_name: firstName, last_name: lastName, role: 'parent' } } });
+      const { data, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { first_name: firstName, last_name: lastName } },
+      });
       if (authError) { setError(authError.message); setIsLoading(false); }
       else if (data.session) { await refreshSession(); setIsLoading(false); navigate(ROUTES.HOME, { replace: true }); }
       else { setIsSuccess(true); setIsLoading(false); }
