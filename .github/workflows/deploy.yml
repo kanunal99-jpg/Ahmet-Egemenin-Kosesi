@@ -24,14 +24,15 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout tested commit
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
+          package-manager-cache: false
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -49,7 +50,7 @@ jobs:
         run: cp dist/index.html dist/404.html
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: dist
 
