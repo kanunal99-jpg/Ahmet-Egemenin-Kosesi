@@ -48,8 +48,8 @@ test('invalid login remains on login page and shows an error', async ({ page }) 
 
 test('authenticated parent can access and render all parent panel tabs', async ({ page }) => {
   test.skip(
-    !process.env.E2E_EMAIL || !process.env.E2E_PASSWORD,
-    'E2E_EMAIL/E2E_PASSWORD secrets are required for authenticated coverage.',
+    !process.env.CI && (!process.env.E2E_EMAIL || !process.env.E2E_PASSWORD),
+    'E2E_EMAIL/E2E_PASSWORD secrets are required for authenticated coverage outside CI.',
   );
 
   await page.goto('login');
