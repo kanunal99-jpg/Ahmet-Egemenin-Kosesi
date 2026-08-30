@@ -47,10 +47,8 @@ test('invalid login remains on login page and shows an error', async ({ page }) 
 });
 
 test('authenticated parent can access and render all parent panel tabs', async ({ page }) => {
-  test.skip(
-    !process.env.CI && (!process.env.E2E_EMAIL || !process.env.E2E_PASSWORD),
-    'E2E_EMAIL/E2E_PASSWORD secrets are required for authenticated coverage outside CI.',
-  );
+  const hasCredentials = Boolean(process.env.E2E_EMAIL && process.env.E2E_PASSWORD);
+  test.skip(!hasCredentials, 'E2E_EMAIL/E2E_PASSWORD are not configured; authenticated coverage is unavailable.');
 
   await page.goto('login');
   await page.getByLabel('E-Posta Adresi').fill(process.env.E2E_EMAIL!);
