@@ -30,6 +30,36 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Audit high and critical dependencies
+        shell: bash
+        run: |
+          set +e
+          npm audit --json > /tmp/npm-audit.json
+          audit_exit=$?
+          set -e
+          node <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync('/tmp/npm-audit.json', 'utf8'));
+          const vulnerabilities = report.vulnerabilities || {};
+          const high = Object.entries(vulnerabilities)
+            .filter(([, item]) => item.severity === 'high' || item.severity === 'critical')
+            .map(([name, item]) => ({
+              name,
+              severity: item.severity,
+              range: item.range,
+              fixAvailable: item.fixAvailable,
+              via: (item.via || []).map((entry) => typeof entry === 'string' ? entry : `${entry.source || 'advisory'}:${entry.title || ''}`),
+            }));
+          console.log(JSON.stringify({
+            totalVulnerabilities: report.metadata?.vulnerabilities || {},
+            highOrCriticalPackages: high,
+          }, null, 2));
+          NODE
+          if [[ "$audit_exit" -gt 1 ]]; then
+            exit "$audit_exit"
+          fi
+          echo "npm audit exit code: $audit_exit (non-blocking diagnostic step)."
+
       - name: Typecheck
         run: npm run lint
 
