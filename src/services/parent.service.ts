@@ -99,10 +99,22 @@ export class ParentService {
         p_old_pin: oldPin || null,
       });
       if (error) return { success: false, error: error.message, affectedRows: 0 };
-      const result = data as { success?: boolean; message?: string | null } | null;
-      if (!result || typeof result.success !== 'boolean') return { success: false, error: 'Geçersiz PIN güncelleme yanıtı.', affectedRows: 0 };
-      if (!result.success) return { success: false, error: result.message || 'PIN güncellenemedi.', affectedRows: 0 };
-      return { success: true, affectedRows: 1 };
+
+      // The reconciled RPC contract returns BOOLEAN. Keep object compatibility for
+      // older deployments so a partially migrated environment remains safe to use.
+      if (typeof data === 'boolean') {
+        return data
+          ? { success: true, affectedRows: 1 }
+          : { success: false, error: 'PIN güncellenemedi.', affectedRows: 0 };
+      }
+
+      if (data && typeof data === 'object') {
+        const result = data as { success?: boolean; message?: string | null };
+        if (result.success === true) return { success: true, affectedRows: 1 };
+        return { success: false, error: result.message || 'PIN güncellenemedi.', affectedRows: 0 };
+      }
+
+      return { success: false, error: 'Geçersiz PIN güncelleme yanıtı.', affectedRows: 0 };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : 'Unknown error', affectedRows: 0 };
     }
