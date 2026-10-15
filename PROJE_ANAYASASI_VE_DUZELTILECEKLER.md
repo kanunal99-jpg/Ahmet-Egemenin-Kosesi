@@ -50,3 +50,17 @@ Test hesabı secret yapılandırmasını güvenli biçimde tamamla; testleri ça
 - **Faz 2 — Düzelt:** Yukarıdaki konu için kod ve konfigürasyonda en küçük güvenli değişiklik gerekli.
 - **Faz 3 — Test:** Birim + entegrasyon + cihaz / gerçek servis testi gerekir.
 - **Faz 4 — Yayın:** Başarılı ve indirilebilir çıktı ile production smoke yapılmadan kapatılmaz.
+
+---
+
+## Ek Anayasa — Kanıtlı İnceleme ve Düzeltme Takibi (15.10.2026)
+
+- **Kanıtlı araştırma:** [4 bulguluk kaynak-kod/CI/Release incelemesi](https://github.com/kanunal99-jpg/Ahmet-Egemenin-Kosesi/blob/main/docs/KANITLI_TEKNIK_DENETIM_2026-10-15.md).
+- **Özel proje kuralı:** Çocuk/ebeveyn RLS ve kimlikli E2E yeşil olmadan üretime geçilmez; test kimlik bilgileri yalnız CI Secret olur.
+- **Kanıt sınıfları:** Doğrulanmış hata / kaynak kodu ile doğrulanmış eksik / hipotez / gerçek cihaz testi gerekli. Bu statüler birbirine karıştırılamaz.
+- **Gerçek işlev zorunluluğu:** Her görünen menü, form, buton, kayıt, harita, oynatıcı ve servis için işlev testi vardır; sahte bağlantı ve sahte başarı yasaktır.
+- **Veri güvenliği:** Kullanıcı bilgisi uydurulamaz, sızdırılamaz veya sessizce kaybedilemez. Her kimlik, senkronizasyon ve import/export yetki testinden geçer.
+- **CI/Release kapısı:** Başarısız testte ürün tamamlanmış sayılmaz. Android'de SHA-256 ve indirilebilir Release APK; kritik modülde gerçek cihaz smoke zorunludur.
+- **Ücret onayı:** Ücretli API/kota/servis tüketimi kullanıcı onayı olmadan genişletilmez; gerçek alternatif ve fallback test edilir.
+- **Kanıtlı kapanış:** Her bulgu için ID, P0-P3 önceliği, dosya+satır, hata/CI kanıtı, kök neden, düzeltme commit'i, kabul testi, sürüm ve geri dönüş planı kaydedilir.
+- **Faz durumu:** Bu ekleme yalnız analiz/dokümantasyon; kaynak kod düzeltmesi veya üretim doğrulaması değildir.
