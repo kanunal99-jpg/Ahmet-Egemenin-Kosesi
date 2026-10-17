@@ -9,6 +9,7 @@ import { useAuth } from '../hooks/useAuth';
 import { parentService } from '../services/parent.service';
 import { parentLinkService } from '../services/parentLink.service';
 import { Video } from '../types';
+import { ChildCategoryPolicy, permittedCategoryIds, isVisibleForChild } from '../utils/childCategoryPolicy';
 import { Sparkles, Search, Compass, Link2, CheckCircle2 } from 'lucide-react';
 
 export const HomePage: React.FC = () => {
@@ -17,7 +18,7 @@ export const HomePage: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeVideo, setActiveVideo] = useState<Video | null>(null);
-  const [allowedCategoryIds, setAllowedCategoryIds] = useState<string[] | null>(null);
+  const [childPolicy, setChildPolicy] = useState<ChildCategoryPolicy | null>(null);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [inviteExpiresAt, setInviteExpiresAt] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -34,17 +35,29 @@ export const HomePage: React.FC = () => {
 
   useEffect(() => {
     if (!user?.id || role !== 'child') {
-      setAllowedCategoryIds(null);
+      setChildPolicy(null);
       return;
     }
 
+    const currentUserId = user.id;
     let isMounted = true;
+    setChildPolicy(null);
+
+    // An unavailable/malformed response must not become "all categories allowed".
     parentService.getEffectiveParentalSettings().then((settings) => {
       if (!isMounted) return;
-      if (settings?.allowed_categories && settings.allowed_categories.length > 0) setAllowedCategoryIds(settings.allowed_categories);
-      else setAllowedCategoryIds(null);
+      const allowed = settings?.allowed_categories;
+      if (!settings || allowed === undefined ||
+          (allowed !== null && (!Array.isArray(allowed) ||
+            !allowed.every((id) => typeof id === 'string')))) {
+        setChildPolicy({ userId: currentUserId, status: 'error', allowedCategoryIds: [] });
+        return;
+      }
+      setChildPolicy({ userId: currentUserId, status: 'ready', allowedCategoryIds: allowed });
     }).catch(() => {
-      if (isMounted) setAllowedCategoryIds(null);
+      if (isMounted) {
+        setChildPolicy({ userId: currentUserId, status: 'error', allowedCategoryIds: [] });
+      }
     });
 
     return () => { isMounted = false; };
@@ -55,13 +68,19 @@ export const HomePage: React.FC = () => {
     searchQuery: searchQuery || undefined,
   });
 
-  const visibleCategories = allowedCategoryIds
-    ? DEFAULT_CATEGORIES.filter((category) => allowedCategoryIds.includes(category.id))
-    : DEFAULT_CATEGORIES;
+  const allowedCategoryIds = permittedCategoryIds(role, user?.id, childPolicy);
+  const childPolicyReady = role !== 'child' ||
+    (childPolicy?.userId === user?.id && childPolicy?.status === 'ready');
+  const childPolicyUnavailable = role === 'child' &&
+    childPolicy?.userId === user?.id && childPolicy?.status === 'error';
 
-  const filteredVideos = allowedCategoryIds
-    ? videos.filter((video) => !video.category_id || allowedCategoryIds.includes(video.category_id))
-    : videos;
+  const visibleCategories = allowedCategoryIds === null
+    ? DEFAULT_CATEGORIES
+    : DEFAULT_CATEGORIES.filter((category) => allowedCategoryIds.includes(category.id));
+
+  const filteredVideos = videos.filter((video) =>
+    isVisibleForChild(video.category_id, allowedCategoryIds)
+  );
 
   const generateInvite = async () => {
     setIsGeneratingInvite(true);
@@ -115,6 +134,14 @@ export const HomePage: React.FC = () => {
           {visibleCategories.map((category) => <button key={category.id} onClick={() => setSelectedCategory(category.id)} aria-pressed={selectedCategory === category.id} className={`px-4 py-2.5 rounded-xl font-bold text-xs shrink-0 transition-all border ${selectedCategory === category.id ? 'bg-slate-900 text-white border-slate-900 shadow-sm' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300'}`}>{category.title}</button>)}
         </div>
       </section>
+
+      {role === 'child' && !childPolicyReady && (
+        <div role="status" aria-live="polite" className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">
+          {childPolicyUnavailable
+            ? 'Ebeveyn kategori izinleri doğrulanamadı. Güvenlik için videolar gizlendi. Lütfen bağlantınızı kontrol edip sayfayı yenileyin.'
+            : 'Ebeveyn kategori izinleri doğrulanıyor. Kontrol tamamlanana kadar videolar gizli tutuluyor.'}
+        </div>
+      )}
 
       <section className="space-y-4">
         <div className="flex items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-widest text-blue-700">Keşfet</p><h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Öne Çıkan Videolar</h2></div></div>
